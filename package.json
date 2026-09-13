@@ -1,0 +1,17 @@
+{
+  "name": "quill",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:client": "bun --filter quill-client dev",
+    "dev:server": "bun --filter quill-server dev",
+    "dev": "bun run --filter '*' dev",
+    "build": "bun run --filter '*' build"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
