@@ -39,8 +39,6 @@ See `Architecture.md` for the full breakdown of both `apps/client` and `apps/ser
 - Background jobs via BullMQ (emails, image processing, feed recomputation)
 - Admin dashboard, moderation, analytics
 
-Full feature roadmap: see the project's feature tracker (`blog-app-project-spec.md`).
-
 ## Getting Started (local dev)
 
 ```bash
