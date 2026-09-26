@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -e
 
 mkdir -p apps/server/src apps/client packages/shared/src

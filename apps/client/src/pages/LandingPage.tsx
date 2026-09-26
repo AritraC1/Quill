@@ -1,19 +1,6 @@
 import React, { useState } from "react";
 import AuthPopupForm from "../features/auth/components/AuthPopupForm";
 
-const QuillMark: React.FC<{ className?: string }> = ({ className }) => (
-  <svg viewBox="0 0 32 32" className={className} fill="none" aria-hidden="true">
-    <path
-      d="M27 5C18 6 10 13 7 23c-.6 2-1 3.6-1 3.6s1.7-.4 3.7-1C19.6 22.6 26.4 14.6 27 5Z"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinejoin="round"
-    />
-    <path d="M23 9 8.5 23.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    <path d="M6 26c1.6-.4 3-1 4-2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-  </svg>
-);
-
 const InkIllustration: React.FC = () => (
   <svg viewBox="0 0 480 560" className="h-full w-full" role="img" aria-labelledby="inkIllustrationTitle">
     <title id="inkIllustrationTitle">A feather quill resting beside an inkwell, mid-sentence</title>
@@ -93,8 +80,7 @@ const LandingPage: React.FC = () => {
       <header className="relative border-b border-[#232A3B]/15">
         <div className="mx-auto flex max-w-334 items-center justify-between px-5 py-5 sm:px-8">
           <a href="#" className="flex items-center gap-2">
-            <QuillMark className="h-6 w-6 -rotate-6 text-[#232A3B]" />
-            <span className="font-editorial text-2xl font-semibold tracking-tight sm:text-[26px]">Quill</span>
+            <span className="font-editorial text-2xl font-semibold tracking-tight sm:text-[26px]">✍🏻 Quill</span>
           </a>
 
           <nav className="hidden items-center gap-8 md:flex">

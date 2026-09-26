@@ -1,5 +1,13 @@
 {
   "name": "quill-server",
-  "scripts": { "dev": "bun --watch src/index.ts" },
-  "dependencies": { "express": "^4.19.0", "@quill/shared": "workspace:*" }
+  "scripts": {
+    "dev": "bun --watch src/index.ts"
+  },
+  "dependencies": {
+    "@quill/shared": "workspace:*",
+    "@types/express": "^5.0.6",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.0",
+    "express": "^5.2.1"
+  }
 }

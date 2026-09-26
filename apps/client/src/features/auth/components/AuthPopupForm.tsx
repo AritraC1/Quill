@@ -1,84 +1,7 @@
 import { useState, type FormEvent, useEffect } from "react";
-
-type View = "joinOptions" | "joinEmail" | "signinOptions" | "signinEmail";
-
-interface AuthPopupFormProps {
-  /** Controls whether the modal is rendered/visible. */
-  isOpen: boolean;
-  /** Called when the user closes the modal (backdrop click, Esc, close icon). */
-  onClose: () => void;
-  /** Which panel to open on first render. Defaults to the sign-up options. */
-  initialView?: View;
-}
-
-/* ---------------------------------- Icons --------------------------------- */
-
-const GoogleIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-    <path
-      d="M19.6 10.23c0-.68-.06-1.32-.17-1.94H10v3.68h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.9-1.75 2.99-4.32 2.99-7.26z"
-      fill="#4285F4"
-    />
-    <path
-      d="M10 20c2.7 0 4.96-.9 6.61-2.43l-3.23-2.5c-.9.6-2.04.96-3.38.96-2.6 0-4.8-1.76-5.59-4.12H1.07v2.59A10 10 0 0 0 10 20z"
-      fill="#34A853"
-    />
-    <path
-      d="M4.41 11.9A6 6 0 0 1 4.09 10c0-.66.11-1.3.32-1.9V5.51H1.07A10 10 0 0 0 0 10c0 1.61.39 3.14 1.07 4.49l3.34-2.6z"
-      fill="#FBBC05"
-    />
-    <path
-      d="M10 3.98c1.47 0 2.79.5 3.83 1.49l2.87-2.87A9.53 9.53 0 0 0 10 0 10 10 0 0 0 1.07 5.51l3.34 2.59C5.2 5.74 7.4 3.98 10 3.98z"
-      fill="#EA4335"
-    />
-  </svg>
-);
-
-const FacebookIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-    <circle cx="10" cy="10" r="10" fill="#1877F2" />
-    <path
-      d="M13.5 12.8l.44-2.8h-2.69V8.2c0-.77.38-1.51 1.6-1.51h1.24V4.3s-1.12-.19-2.2-.19c-2.24 0-3.71 1.36-3.71 3.81v2.08H5.75v2.8h2.43V19.8c.49.08.99.12 1.5.12s1.01-.04 1.5-.12v-7h2.32z"
-      fill="#fff"
-    />
-  </svg>
-);
-
-const MailIcon = ({ className = "" }: { className?: string }) => (
-  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" className={className}>
-    <rect x="2" y="4" width="16" height="12" rx="1.5" stroke="currentColor" fill="none" strokeWidth="1.3" />
-    <path d="M2.5 5 10 11l7.5-6" stroke="currentColor" fill="none" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-const MailBig = () => (
-  <svg width="64" height="46" viewBox="0 0 64 46" aria-hidden="true" fill="none">
-    <path
-      d="M9 2 60 2 60 34 15 34"
-      stroke="#1A1A1A"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M9 2 34.5 22 60 2"
-      stroke="#1A1A1A"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path d="M2 40 8 37" stroke="#1A1A1A" strokeWidth="1.3" strokeLinecap="round" />
-    <path d="M1 34 9 30" stroke="#1A1A1A" strokeWidth="1.3" strokeLinecap="round" />
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-    <path d="M2 2 18 18M18 2 2 18" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-  </svg>
-);
-
-/* ------------------------------ Reusable bits ------------------------------ */
+import type { AuthPopupFormProps, View } from "../types";
+import { FaGoogle, FaFacebook } from "react-icons/fa";
+import { Mail, XIcon } from "lucide-react";
 
 const SocialButton = ({
   icon,
@@ -116,7 +39,13 @@ const RememberMe = ({
       />
       <span className="pointer-events-none flex h-4.5 w-4.5 items-center justify-center rounded-sm border border-neutral-900 bg-white peer-checked:bg-neutral-900">
         {checked && (
-          <svg width="11" height="9" viewBox="0 0 11 9" fill="none" aria-hidden="true">
+          <svg
+            width="11"
+            height="9"
+            viewBox="0 0 11 9"
+            fill="none"
+            aria-hidden="true"
+          >
             <path
               d="M1 4.3 3.8 7 10 1"
               stroke="white"
@@ -132,9 +61,11 @@ const RememberMe = ({
   </label>
 );
 
-/* --------------------------------- Modal ----------------------------------- */
-
-const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPopupFormProps) => {
+const AuthPopupForm = ({
+  isOpen,
+  onClose,
+  initialView = "joinOptions",
+}: AuthPopupFormProps) => {
   const [view, setView] = useState<View>(initialView);
   const [remember, setRemember] = useState(true);
   const [fullName, setFullName] = useState("");
@@ -200,10 +131,10 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
           aria-label="Close"
           className="absolute right-5 top-5 text-neutral-400 transition-colors hover:text-neutral-700"
         >
-          <CloseIcon />
+          <XIcon />
         </button>
 
-        {/* ---------------- JOIN — sign up options ---------------- */}
+        {/* JOIN — sign up options */}
         {view === "joinOptions" && (
           <div className="flex flex-col gap-8">
             <h1 className="text-center font-serif text-[34px] leading-tight text-neutral-900 sm:text-[40px]">
@@ -211,10 +142,16 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
             </h1>
 
             <div className="flex flex-col gap-3.5">
-              <SocialButton icon={<GoogleIcon />} label="Sign up with Google" />
-              <SocialButton icon={<FacebookIcon />} label="Sign up with Facebook" />
               <SocialButton
-                icon={<MailIcon />}
+                icon={<FaGoogle size={24} />}
+                label="Sign up with Google"
+              />
+              <SocialButton
+                icon={<FaFacebook size={24} />}
+                label="Sign up with Facebook"
+              />
+              <SocialButton
+                icon={<Mail />}
                 label="Sign up with email"
                 onClick={() => setView("joinEmail")}
               />
@@ -235,11 +172,10 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
           </div>
         )}
 
-        {/* ---------------- JOIN — email form ---------------- */}
+        {/* JOIN — email form */}
         {view === "joinEmail" && (
           <form onSubmit={handleCreateAccount} className="flex flex-col gap-8">
             <div className="flex flex-col items-center gap-5">
-              <MailBig />
               <h1 className="text-center font-serif text-[32px] leading-tight text-neutral-900 sm:text-[38px]">
                 Sign up with email
               </h1>
@@ -247,7 +183,10 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
 
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
-                <label htmlFor="fullName" className="text-[15px] text-neutral-900">
+                <label
+                  htmlFor="fullName"
+                  className="text-[15px] text-neutral-900"
+                >
                   Your full name
                 </label>
                 <input
@@ -261,7 +200,10 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
               </div>
 
               <div className="flex flex-col gap-2">
-                <label htmlFor="joinEmailInput" className="text-[15px] text-neutral-900">
+                <label
+                  htmlFor="joinEmailInput"
+                  className="text-[15px] text-neutral-900"
+                >
                   Your email
                 </label>
                 <input
@@ -306,7 +248,7 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
           </form>
         )}
 
-        {/* ---------------- SIGN IN — options ---------------- */}
+        {/* SIGN IN — options */}
         {view === "signinOptions" && (
           <div className="flex flex-col gap-8">
             <h1 className="text-center font-serif text-[34px] leading-tight text-neutral-900 sm:text-[40px]">
@@ -314,10 +256,16 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
             </h1>
 
             <div className="flex flex-col gap-3.5">
-              <SocialButton icon={<GoogleIcon />} label="Sign in with Google" />
-              <SocialButton icon={<FacebookIcon />} label="Sign in with Facebook" />
               <SocialButton
-                icon={<MailIcon />}
+                icon={<FaGoogle size={24} />}
+                label="Sign in with Google"
+              />
+              <SocialButton
+                icon={<FaFacebook size={24} />}
+                label="Sign in with Facebook"
+              />
+              <SocialButton
+                icon={<Mail />}
                 label="Sign in with email"
                 onClick={() => setView("signinEmail")}
               />
@@ -338,7 +286,10 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
               </p>
               <p>
                 Forgot email or trouble signing in?{" "}
-                <a href="#" className="underline underline-offset-2 hover:text-neutral-900">
+                <a
+                  href="#"
+                  className="underline underline-offset-2 hover:text-neutral-900"
+                >
                   Get help
                 </a>
                 .
@@ -347,18 +298,20 @@ const AuthPopupForm = ({ isOpen, onClose, initialView = "joinOptions" }: AuthPop
           </div>
         )}
 
-        {/* ---------------- SIGN IN — email form ---------------- */}
+        {/* SIGN IN — email form */}
         {view === "signinEmail" && (
           <form onSubmit={handleSigninContinue} className="flex flex-col gap-8">
             <div className="flex flex-col items-center gap-5">
-              <MailBig />
               <h1 className="text-center font-serif text-[32px] leading-tight text-neutral-900 sm:text-[38px]">
                 Sign in with email
               </h1>
             </div>
 
             <div className="flex flex-col gap-2">
-              <label htmlFor="signinEmailInput" className="text-[15px] text-neutral-900">
+              <label
+                htmlFor="signinEmailInput"
+                className="text-[15px] text-neutral-900"
+              >
                 Your email
               </label>
               <input
