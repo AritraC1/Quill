@@ -1,0 +1,65 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+    branches: [main, master, dev]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    # Ephemeral service containers for database tests (no host bloat)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: quill_test
+          POSTGRES_PASSWORD: quill_test_secret
+          POSTGRES_DB: quill_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Monorepo Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type Check (TypeScript)
+        run: bun x tsc --noEmit
+
+      - name: Run Backend Tests
+        env:
+          DATABASE_URL: postgres://quill_test:quill_test_secret@localhost:5432/quill_test_db
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ci_secret_key_12345
+        run: bun test apps/server
+
+      - name: Build Frontend (Vite)
+        run: bun run --filter quill-client build
+
+      - name: Verify Docker Build (Client & Server)
+        run: docker compose build
