@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quill-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quill}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quill_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-quill_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quill}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: quill-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: production
+    container_name: quill-server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      PORT_NUMBER: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-quill}:${POSTGRES_PASSWORD:-quill_secret}@postgres:5432/${POSTGRES_DB:-quill_db}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-quill_jwt_secret_dev}
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: production
+    container_name: quill-worker
+    restart: unless-stopped
+    command: ["bun", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-quill}:${POSTGRES_PASSWORD:-quill_secret}@postgres:5432/${POSTGRES_DB:-quill_db}
+      REDIS_URL: redis://redis:6379
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile
+      target: production
+    container_name: quill-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - internal
+    depends_on:
+      - server
+
+networks:
+  internal:
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -8,6 +8,12 @@
     "@types/express": "^5.0.6",
     "cors": "^2.8.6",
     "dotenv": "^18.0.0",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8"
   }
 }

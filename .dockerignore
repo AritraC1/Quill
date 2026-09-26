@@ -1,0 +1,40 @@
+# Dependencies — reinstalled fresh inside the container
+node_modules
+**/node_modules
+
+# Build output — rebuilt inside the container, or not needed for that stage
+apps/client/dist
+apps/server/dist
+**/dist
+
+# Env files — never bake secrets into an image; passed at runtime instead
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+
+# Editor/OS cruft
+.vscode
+.idea
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docker itself
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Docs — not needed inside the image
+*.md
+docs/
+
+# Tests — usually not needed in production images
+**/*.test.ts
+**/*.spec.ts
+coverage/
