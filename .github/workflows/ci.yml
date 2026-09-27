@@ -48,8 +48,13 @@ jobs:
       - name: Install Monorepo Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Type Check (TypeScript)
+      - name: Type Check Client
+        run: bun x tsc -b --noEmit
+        working-directory: apps/client
+
+      - name: Type Check Server
         run: bun x tsc --noEmit
+        working-directory: apps/server
 
       - name: Run Backend Tests
         env:
