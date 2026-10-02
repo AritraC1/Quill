@@ -1,18 +1,24 @@
 {
   "name": "quill-server",
   "scripts": {
-    "dev": "bun --watch src/index.ts"
+    "dev": "bun --watch --env-file=../../.env src/index.ts",
+    "dev:worker": "bun --watch --env-file=../../.env src/worker.ts"
   },
   "dependencies": {
     "@quill/shared": "workspace:*",
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.23.1",
+    "bcrypt": "^6.0.0",
+    "bullmq": "^6.3.11",
     "cors": "^2.8.6",
     "dotenv": "^18.0.0",
     "express": "^5.2.1",
+    "ioredis": "^6.0.0",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
+    "resend": "^6.32.0",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.6.5"

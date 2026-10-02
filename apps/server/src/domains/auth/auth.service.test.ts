@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import AuthService from "./auth.service";
 import { BadRequestError, ConflictError } from "../../core/errors";
 
+
 describe("AuthService", () => {
   it("should throw BadRequestError if name or email is missing", async () => {
     const authService = new AuthService();

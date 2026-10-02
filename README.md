@@ -52,7 +52,7 @@ This starts:
 | Service    | Port | Description                     |
 |------------|------|---------------------------------|
 | `client`   | 5173 | Vite dev server (React)         |
-| `server`   | 4000 | Express API                     |
+| `server`   | 3000 | Express API                     |
 | `worker`   | —    | BullMQ background job processor |
 | `postgres` | 5432 | Primary database                |
 | `redis`    | 6379 | Cache + BullMQ queue backend    |

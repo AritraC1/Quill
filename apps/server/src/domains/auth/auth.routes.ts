@@ -7,7 +7,10 @@ const authController = new AuthController();
 // Sign-up
 router.post("/sign-up", authController.createAccount);
 
-// Sign-in
-// router.post("/sign-in", authController.login);
+// Request OTP
+router.post("/request-otp", authController.requestOTP);
+
+// Verify OTP
+router.post("/verify-otp", authController.verifyOTP);
 
 export default router;

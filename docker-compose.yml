@@ -43,10 +43,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      PORT_NUMBER: 3000
       DATABASE_URL: postgres://${POSTGRES_USER:-quill}:${POSTGRES_PASSWORD:-quill_secret}@postgres:5432/${POSTGRES_DB:-quill_db}
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-quill_jwt_secret_dev}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}   # must be ≥32 chars — do NOT use quill_jwt_secret_dev (too short)
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
+      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
+      EMAIL_FROM: ${EMAIL_FROM:-Quill <beth.t@example.com>}
     networks:
       - internal
     depends_on:
@@ -67,6 +71,12 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-quill}:${POSTGRES_PASSWORD:-quill_secret}@postgres:5432/${POSTGRES_DB:-quill_db}
       REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}   # must be ≥32 chars — do NOT use quill_jwt_secret_dev (too short)
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
+      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
+      EMAIL_FROM: ${EMAIL_FROM:-Quill <beth.t@example.com>}
     networks:
       - internal
     depends_on:

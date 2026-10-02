@@ -60,7 +60,12 @@ jobs:
         env:
           DATABASE_URL: postgres://quill_test:quill_test_secret@localhost:5432/quill_test_db
           REDIS_URL: redis://localhost:6379
-          JWT_SECRET: X7@q2Lm!9V$k8P&z4R^t6N*w1C%3Y!2A1
+          JWT_SECRET: ci_test_secret_key_at_least_32_chars_ok
+          JWT_EXPIRES_IN: 15m
+          JWT_REFRESH_EXPIRES_IN: 7d
+          CLIENT_URL: http://localhost:5173
+          RESEND_API_KEY: re_ci_dummy_key_not_used_in_unit_tests
+          EMAIL_FROM: Quill <beth.t@example.com>
         run: bun test apps/server
 
       - name: Build Frontend (Vite)

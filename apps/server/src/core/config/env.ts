@@ -21,6 +21,10 @@ const envSchema = z.object({
 
   // CORS (client origin, for allowed-origin config)
   CLIENT_URL: z.string().url().default("http://localhost:5173"),
+
+  // Resend
+  RESEND_API_KEY: z.string().startsWith('re_'),
+  EMAIL_FROM: z.string().min(3).default("Quill <beth.t@example.com>")
 });
 
 const parsed = envSchema.safeParse(process.env);
