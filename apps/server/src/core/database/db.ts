@@ -1,14 +1,14 @@
 import { Pool } from "pg";
+import { databaseConfig } from "../config/database.config";
+import { logger } from "../logger/logger";
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+export const pool = new Pool(databaseConfig);
 
 pool.on("connect", () => {
-  console.log("Connected to PostgreSQL via Docker network");
+  logger.info("Connected to PostgreSQL via Docker network");
 });
 
 pool.on("error", (err) => {
-  console.error("Unexpected error on idle database client", err);
+  logger.error({ err }, "Unexpected error on idle database client");
   process.exit(-1);
 });

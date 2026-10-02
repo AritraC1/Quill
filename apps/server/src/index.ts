@@ -1,15 +1,17 @@
 import express from "express";
 import dotenv from "dotenv";
 import swaggerUi from "swagger-ui-express";
+
 import routes from "./routes/routes";
-import { swaggerSpec } from "./core/swagger/swagger.config";
+import { swaggerSpec } from "./core/config/swagger.config";
 import { requestLogger } from "./core/logger/request-logger.middleware";
 import { errorHandler } from "./core/errors";
+import { env } from "./core/config/env";
+import { logger } from "./core/logger/logger";
 
 dotenv.config();
 
 // Declarations
-const PORT = process.env.PORT_NUMBER || 3000;
 const app = express();
 
 // Middlewares
@@ -22,6 +24,6 @@ app.use("/api", routes);
 app.use(errorHandler);
 
 // Server start
-app.listen(PORT, () => {
-  console.log(`The server is running on the port: ${PORT}`);
+app.listen(env.PORT, () => {
+  logger.info(`Server started on port ${env.PORT} (${env.NODE_ENV})`);
 });
