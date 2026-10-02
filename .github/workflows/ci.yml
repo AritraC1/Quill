@@ -72,4 +72,7 @@ jobs:
         run: bun run --filter quill-client build
 
       - name: Verify Docker Build (Client & Server)
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: docker compose build
