@@ -11,6 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-quill_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./apps/server/src/core/database/migrations:/docker-entrypoint-initdb.d:ro
     networks:
       - internal
     healthcheck:
@@ -66,7 +67,7 @@ services:
       target: production
     container_name: quill-worker
     restart: unless-stopped
-    command: ["bun", "dist/worker.js"]
+    command: ["bun", "src/worker.ts"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-quill}:${POSTGRES_PASSWORD:-quill_secret}@postgres:5432/${POSTGRES_DB:-quill_db}
