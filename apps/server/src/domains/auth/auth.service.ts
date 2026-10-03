@@ -2,6 +2,8 @@ import bcrypt from "bcrypt";
 import crypto from "node:crypto";
 
 import type {
+  AuthResponseDTO,
+  RefreshTokenDTO,
   RequestOtpDTO,
   SignUpRequestDTO,
   VerifyOtpDTO,
@@ -11,14 +13,17 @@ import UserRepository from "../user/user.repository";
 import OtpRepository from "./otp.repository";
 import type { UserModel } from "../user/user.model";
 import { emailQueue } from "../../jobs/queue";
+import TokenService from "./token.service";
 
 class AuthService {
   private userRepo: UserRepository;
   private otpRepo: OtpRepository;
+  private tokenService: TokenService;
 
   constructor() {
     this.userRepo = new UserRepository();
     this.otpRepo = new OtpRepository();
+    this.tokenService = new TokenService();
   }
 
   // Create a new account
@@ -84,7 +89,7 @@ class AuthService {
   }
 
   // Verify OTP for Login
-  async verifyOtp(data: VerifyOtpDTO): Promise<{ accessToken: string }> {
+  async verifyOtp(data: VerifyOtpDTO): Promise<AuthResponseDTO> {
     // validate data
     if (!data.email || !data.otp) {
       throw new BadRequestError("Email and OTP are required");
@@ -108,11 +113,17 @@ class AuthService {
       throw new BadRequestError("Invalid OTP");
     }
 
-    // Generate Access Token
-    // TODO: Implement JWT
+    // Consume OTP
+    await this.otpRepo.revokeById(activeOtp.id);
 
-    // Return Access Token
-    return { accessToken: "TODO: Implement JWT" };
+    // Generate Access Token
+    const accessToken = await this.tokenService.generateAccessToken(user.id);
+
+    // Generate Refresh Token
+    const refreshToken = await this.tokenService.generateRefreshToken(user.id);
+
+    // Return Tokens
+    return { accessToken, refreshToken };
   }
 
   // Revoke all OTPs for a user
@@ -124,6 +135,50 @@ class AuthService {
 
     // revoke all otps for user
     await this.otpRepo.revokeAllForUser(userId);
+
+    return { success: true };
+  }
+
+  // Refresh Token
+  async refreshToken(data: RefreshTokenDTO): Promise<AuthResponseDTO> {
+    // Validate data
+    if (!data.refreshToken) {
+      throw new BadRequestError("Refresh token is required");
+    }
+
+    // Verify JWT + check refresh token in DB
+    const payload = await this.tokenService.verifyRefreshToken(
+      data.refreshToken,
+    );
+
+    // Revoke old refresh token
+    await this.tokenService.revokeRefreshToken(data.refreshToken);
+
+    // Generate new access token
+    const accessToken = await this.tokenService.generateAccessToken(
+      payload.userId,
+    );
+
+    // Generate and persist new refresh token
+    const refreshToken = await this.tokenService.generateRefreshToken(
+      payload.userId,
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  // Logout
+  async logout(userId: string): Promise<{ success: true }> {
+    // validate user id
+    if (!userId) {
+      throw new BadRequestError("User ID is required");
+    }
+
+    // revoke all refresh tokens for the user
+    await this.tokenService.revokeAllRefreshTokens(userId);
 
     return { success: true };
   }

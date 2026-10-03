@@ -14,4 +14,9 @@ export interface VerifyOtpDTO {
 
 export interface AuthResponseDTO {
   accessToken: string;
+  refreshToken: string;
+}
+
+export interface RefreshTokenDTO {
+  refreshToken: string;
 }

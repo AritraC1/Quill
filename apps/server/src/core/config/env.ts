@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type StringValue } from "ms";
 
 const envSchema = z.object({
   // App
@@ -16,15 +17,23 @@ const envSchema = z.object({
 
   // Auth
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
-  JWT_EXPIRES_IN: z.string().default("15m"),
-  JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+
+  JWT_EXPIRES_IN: z
+    .string()
+    .default("15m")
+    .transform((value) => value as StringValue),
+
+  JWT_REFRESH_EXPIRES_IN: z
+    .string()
+    .default("7d")
+    .transform((value) => value as StringValue),
 
   // CORS (client origin, for allowed-origin config)
   CLIENT_URL: z.string().url().default("http://localhost:5173"),
 
   // Resend
-  RESEND_API_KEY: z.string().startsWith('re_'),
-  EMAIL_FROM: z.string().min(3).default("Quill <beth.t@example.com>")
+  RESEND_API_KEY: z.string().startsWith("re_"),
+  EMAIL_FROM: z.string().min(3).default("Quill <beth.t@example.com>"),
 });
 
 const parsed = envSchema.safeParse(process.env);
