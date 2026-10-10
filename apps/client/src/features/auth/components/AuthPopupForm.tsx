@@ -1,7 +1,8 @@
 import { useState, type FormEvent, useEffect } from "react";
 import type { AuthPopupFormProps, View } from "../types";
 import { FaGoogle, FaFacebook } from "react-icons/fa";
-import { Mail, XIcon } from "lucide-react";
+import { Mail, XIcon, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
+import { useAuth } from "../hooks/useAuth";
 
 const SocialButton = ({
   icon,
@@ -65,24 +66,37 @@ const AuthPopupForm = ({
   isOpen,
   onClose,
   initialView = "joinOptions",
+  onAuthSuccess,
 }: AuthPopupFormProps) => {
   const [view, setView] = useState<View>(initialView);
   const [remember, setRemember] = useState(true);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [signinEmail, setSigninEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [targetEmail, setTargetEmail] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
-  // Reset to the requested starting view every time the modal transitions
-  // from closed to open. This adjusts state *during render* (React's
-  // recommended pattern for "state derived from a prop change") instead of
-  // in an effect, so it doesn't trigger a second, cascading render pass.
+  const { signUp, requestOtp, verifyOtp, isLoading, error, clearError } = useAuth();
+
+  // Reset view when opened
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
   if (isOpen !== prevIsOpen) {
     setPrevIsOpen(isOpen);
     if (isOpen) {
       setView(initialView);
+      clearError();
+      setFeedbackMessage(null);
+      setOtp("");
     }
   }
+
+  // Clear messages when view changes
+  const switchView = (nextView: View) => {
+    clearError();
+    setFeedbackMessage(null);
+    setView(nextView);
+  };
 
   // Esc to close.
   useEffect(() => {
@@ -106,12 +120,61 @@ const AuthPopupForm = ({
 
   if (!isOpen) return null;
 
-  const handleCreateAccount = (e: FormEvent) => {
+  // Sign up flow: create account then request OTP
+  const handleCreateAccount = async (e: FormEvent) => {
     e.preventDefault();
+    if (!fullName.trim() || !email.trim()) return;
+
+    try {
+      await signUp(fullName, email);
+      await requestOtp(email);
+      setTargetEmail(email.trim().toLowerCase());
+      setFeedbackMessage("Account created! Verification code sent.");
+      switchView("verifyOtp");
+    } catch {
+      // error state set by useAuth
+    }
   };
 
-  const handleSigninContinue = (e: FormEvent) => {
+  // Sign in flow: request OTP for existing user
+  const handleSigninContinue = async (e: FormEvent) => {
     e.preventDefault();
+    if (!signinEmail.trim()) return;
+
+    try {
+      await requestOtp(signinEmail);
+      setTargetEmail(signinEmail.trim().toLowerCase());
+      setFeedbackMessage("Verification code sent to your email.");
+      switchView("verifyOtp");
+    } catch {
+      // error state set by useAuth
+    }
+  };
+
+  // OTP verification
+  const handleVerifyOtp = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!otp.trim() || !targetEmail) return;
+
+    try {
+      const tokens = await verifyOtp(targetEmail, otp);
+      if (onAuthSuccess) {
+        onAuthSuccess(tokens);
+      }
+      onClose();
+    } catch {
+      // error state set by useAuth
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!targetEmail || isLoading) return;
+    try {
+      await requestOtp(targetEmail);
+      setFeedbackMessage("New OTP code sent! Use 0000 for testing.");
+    } catch {
+      // handled
+    }
   };
 
   return (
@@ -153,7 +216,7 @@ const AuthPopupForm = ({
               <SocialButton
                 icon={<Mail />}
                 label="Sign up with email"
-                onClick={() => setView("joinEmail")}
+                onClick={() => switchView("joinEmail")}
               />
             </div>
 
@@ -163,7 +226,7 @@ const AuthPopupForm = ({
               Already have an account?{" "}
               <button
                 type="button"
-                onClick={() => setView("signinOptions")}
+                onClick={() => switchView("signinOptions")}
                 className="underline underline-offset-2 hover:text-neutral-900"
               >
                 Sign in
@@ -181,6 +244,12 @@ const AuthPopupForm = ({
               </h1>
             </div>
 
+            {error && (
+              <div className="rounded-lg bg-red-50 p-3.5 text-sm text-red-700 border border-red-200">
+                {error}
+              </div>
+            )}
+
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <label
@@ -192,6 +261,7 @@ const AuthPopupForm = ({
                 <input
                   id="fullName"
                   type="text"
+                  required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Enter your full name"
@@ -209,6 +279,7 @@ const AuthPopupForm = ({
                 <input
                   id="joinEmailInput"
                   type="email"
+                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email address"
@@ -221,15 +292,17 @@ const AuthPopupForm = ({
 
             <button
               type="submit"
-              className="mx-auto w-full max-w-65 rounded-full bg-neutral-900 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-neutral-800"
+              disabled={isLoading}
+              className="mx-auto flex items-center justify-center gap-2 w-full max-w-65 rounded-full bg-neutral-900 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
             >
-              Create account
+              {isLoading && <Loader2 className="animate-spin w-4 h-4" />}
+              {isLoading ? "Creating account..." : "Create account"}
             </button>
 
             <div className="flex flex-col items-center gap-3 text-[15px] text-neutral-800">
               <button
                 type="button"
-                onClick={() => setView("joinOptions")}
+                onClick={() => switchView("joinOptions")}
                 className="underline underline-offset-2 hover:text-neutral-900"
               >
                 Back to sign up options
@@ -238,7 +311,7 @@ const AuthPopupForm = ({
                 Already have an account?{" "}
                 <button
                   type="button"
-                  onClick={() => setView("signinOptions")}
+                  onClick={() => switchView("signinOptions")}
                   className="underline underline-offset-2 hover:text-neutral-900"
                 >
                   Sign in
@@ -267,7 +340,7 @@ const AuthPopupForm = ({
               <SocialButton
                 icon={<Mail />}
                 label="Sign in with email"
-                onClick={() => setView("signinEmail")}
+                onClick={() => switchView("signinEmail")}
               />
             </div>
 
@@ -278,7 +351,7 @@ const AuthPopupForm = ({
                 No account?{" "}
                 <button
                   type="button"
-                  onClick={() => setView("joinOptions")}
+                  onClick={() => switchView("joinOptions")}
                   className="underline underline-offset-2 hover:text-neutral-900"
                 >
                   Create one
@@ -307,6 +380,12 @@ const AuthPopupForm = ({
               </h1>
             </div>
 
+            {error && (
+              <div className="rounded-lg bg-red-50 p-3.5 text-sm text-red-700 border border-red-200">
+                {error}
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
               <label
                 htmlFor="signinEmailInput"
@@ -317,6 +396,7 @@ const AuthPopupForm = ({
               <input
                 id="signinEmailInput"
                 type="email"
+                required
                 value={signinEmail}
                 onChange={(e) => setSigninEmail(e.target.value)}
                 placeholder="Enter your email address"
@@ -328,18 +408,99 @@ const AuthPopupForm = ({
 
             <button
               type="submit"
-              className="mx-auto w-full max-w-65 rounded-full bg-neutral-900 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-neutral-800"
+              disabled={isLoading}
+              className="mx-auto flex items-center justify-center gap-2 w-full max-w-65 rounded-full bg-neutral-900 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
             >
-              Continue
+              {isLoading && <Loader2 className="animate-spin w-4 h-4" />}
+              {isLoading ? "Sending code..." : "Continue"}
             </button>
 
             <button
               type="button"
-              onClick={() => setView("signinOptions")}
+              onClick={() => switchView("signinOptions")}
               className="mx-auto text-[15px] text-neutral-800 underline underline-offset-2 hover:text-neutral-900"
             >
               Back to sign in options
             </button>
+          </form>
+        )}
+
+        {/* VERIFY OTP FORM */}
+        {view === "verifyOtp" && (
+          <form onSubmit={handleVerifyOtp} className="flex flex-col gap-8">
+            <div className="flex flex-col items-center gap-3">
+              <h1 className="text-center font-serif text-[32px] leading-tight text-neutral-900 sm:text-[38px]">
+                Enter OTP Code
+              </h1>
+              <p className="text-center text-sm text-neutral-600">
+                We sent a 4-digit code to <span className="font-medium text-neutral-900">{targetEmail}</span>
+              </p>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 border border-emerald-200">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Test code: <strong>0000</strong>
+              </span>
+            </div>
+
+            {feedbackMessage && (
+              <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 border border-emerald-200">
+                {feedbackMessage}
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded-lg bg-red-50 p-3.5 text-sm text-red-700 border border-red-200">
+                {error}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="otpInput"
+                className="text-[15px] text-neutral-900 text-center"
+              >
+                Verification Code
+              </label>
+              <input
+                id="otpInput"
+                type="text"
+                maxLength={6}
+                autoFocus
+                required
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                placeholder="0000"
+                className="mx-auto w-48 text-center text-2xl tracking-[0.3em] font-mono rounded-lg bg-neutral-100 px-4 py-3 text-neutral-900 placeholder:text-neutral-400 outline-none ring-1 ring-transparent focus:ring-neutral-900"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading || !otp.trim()}
+              className="mx-auto flex items-center justify-center gap-2 w-full max-w-65 rounded-full bg-neutral-900 py-3.5 text-[15px] font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {isLoading && <Loader2 className="animate-spin w-4 h-4" />}
+              {isLoading ? "Verifying..." : "Verify & Sign In"}
+            </button>
+
+            <div className="flex flex-col items-center gap-3 text-[14px] text-neutral-700">
+              <p>
+                Didn't receive the code?{" "}
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={isLoading}
+                  className="font-medium underline underline-offset-2 hover:text-neutral-900 disabled:opacity-50"
+                >
+                  Resend code
+                </button>
+              </p>
+              <button
+                type="button"
+                onClick={() => switchView("signinEmail")}
+                className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900"
+              >
+                <ArrowLeft className="w-4 h-4" /> Change email address
+              </button>
+            </div>
           </form>
         )}
       </div>

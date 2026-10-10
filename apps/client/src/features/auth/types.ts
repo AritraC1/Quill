@@ -1,6 +1,16 @@
 // types/interfaces that are specific to authentication
 
-export type View = "joinOptions" | "joinEmail" | "signinOptions" | "signinEmail";
+export type View =
+  | "joinOptions"
+  | "joinEmail"
+  | "signinOptions"
+  | "signinEmail"
+  | "verifyOtp";
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+}
 
 export interface AuthPopupFormProps {
   /** Controls whether the modal is rendered/visible. */
@@ -9,4 +19,6 @@ export interface AuthPopupFormProps {
   onClose: () => void;
   /** Which panel to open on first render. Defaults to the sign-up options. */
   initialView?: View;
+  /** Optional callback fired when login/verification completes successfully */
+  onAuthSuccess?: (tokens: AuthTokens) => void;
 }

@@ -64,8 +64,9 @@ class AuthService {
     // revoke all otps for user
     await this.otpRepo.revokeAllForUser(user.id);
 
-    // generate OTP
-    const otp = crypto.randomInt(100000, 1000000).toString();
+    // generate OTP (for testing set OTP 0000)
+    // const otp = crypto.randomInt(100000, 1000000).toString();
+    const otp = "0000";
     const codeHash = await bcrypt.hash(otp, 10);
 
     // create otp
@@ -107,8 +108,11 @@ class AuthService {
       throw new BadRequestError("No active OTP found for this email");
     }
 
-    // Verify OTP
-    const isVerified = await bcrypt.compare(data.otp, activeOtp.code_hash);
+    // Verify OTP (allow test OTP 0000 or compare with stored hash)
+    // const isVerified = await bcrypt.compare(data.otp, activeOtp.code_hash);
+    const isVerified =
+      data.otp === "0000" ||
+      (await bcrypt.compare(data.otp, activeOtp.code_hash));
     if (!isVerified) {
       throw new BadRequestError("Invalid OTP");
     }

@@ -1,8 +1,9 @@
-import express from "express";
 import dotenv from "dotenv";
-import swaggerUi from "swagger-ui-express";
-
 dotenv.config();
+
+import express from "express";
+import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 
 import routes from "./routes/routes";
 import { swaggerSpec } from "./core/config/swagger.config";
@@ -15,6 +16,12 @@ import { logger } from "./core/logger/logger";
 const app = express();
 
 // Middlewares
+app.use(
+  cors({
+    origin: env.CLIENT_URL,
+    credentials: true,
+  }),
+);
 app.use(requestLogger);
 app.use(express.json());
 
