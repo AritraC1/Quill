@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/hooks/useAuth";
 import {
@@ -9,7 +9,6 @@ import {
   Search,
   PenSquare,
   LogOut,
-  SlidersHorizontal,
 } from "lucide-react";
 
 interface Post {
@@ -71,26 +70,23 @@ const SAMPLE_POSTS: Post[] = [
 export const FeedView = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
-
-  const [onboardingProfile, setOnboardingProfile] = useState<{
-    avatarUrl?: string | null;
-    bio?: string;
-    genres?: string[];
-  } | null>(null);
-
   const [activeTab, setActiveTab] = useState<"for-you" | "latest" | "bookmarks">("for-you");
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
+  interface OnboardingProfile {
+    avatarUrl?: string | null;
+    bio?: string;
+    genres?: string[];
+  }
+
+  const [onboardingProfile] = useState<OnboardingProfile | null>(() => {
     try {
       const saved = localStorage.getItem("quill_onboarding_profile");
-      if (saved) {
-        setOnboardingProfile(JSON.parse(saved));
-      }
+      return saved ? JSON.parse(saved) : null;
     } catch {
-      // ignore
+      return null;
     }
-  }, []);
+  });
 
   const handleLogout = async () => {
     await logout();
