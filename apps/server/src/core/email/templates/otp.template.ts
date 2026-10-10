@@ -1,3 +1,4 @@
+// Generate the email template for OTP verification
 export function otpEmailTemplate(code: string) {
     return {
       subject: 'Your Quill verification code',

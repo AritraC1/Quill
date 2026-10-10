@@ -1,3 +1,4 @@
+// Generate the template for Welcome Email
 export function welcomeEmailTemplate() {
     return {
         subject: "Welcome to Quill!",

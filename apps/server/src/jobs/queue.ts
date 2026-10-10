@@ -1,4 +1,5 @@
-import { Queue } from 'bullmq';
-import redisConfig from '../core/config/redis.config';
+import { Queue } from "bullmq";
+import redisConfig from "../core/config/redis.config";
 
-export const emailQueue = new Queue('email', { connection: redisConfig });
+// Creates the email queue for adding email jobs - backed by Redis
+export const emailQueue = new Queue("email", { connection: redisConfig });

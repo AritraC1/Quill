@@ -2,6 +2,7 @@ import pinoHttp from "pino-http";
 import { logger } from "./logger";
 import { randomUUID } from "crypto";
 
+// HTTP request logging middleware with request ID generation and status-based log levels.
 export const requestLogger = pinoHttp({
   logger,
   genReqId: (req) => req.headers["x-request-id"] || randomUUID(),

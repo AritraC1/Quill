@@ -5,7 +5,7 @@ import { otpEmailTemplate } from "./templates/otp.template";
 import { welcomeEmailTemplate } from "./templates/welcome.template";
 
 class EmailService {
-  // Generic email sender
+  // Generic email sender used to send emails through Resend
   private async sendEmail(
     to: string,
     subject: string,
@@ -13,6 +13,7 @@ class EmailService {
     errorMessage: string,
   ): Promise<void> {
     try {
+      // Send the email using the configured sender address and recipient
       const { error } = await resend.emails.send({
         from: env.EMAIL_FROM,
         to: [to],
@@ -32,14 +33,14 @@ class EmailService {
     }
   }
 
-  // Send OTP Email
+  // Generate the OTP email template and send the verification code to the recipient
   async sendOtpEmail(to: string, code: string): Promise<void> {
     const { subject, html } = otpEmailTemplate(code);
 
     await this.sendEmail(to, subject, html, "Failed to send OTP email");
   }
 
-  // Send Welcome Email
+  // Generate and send a welcome email to a newly registered user
   async sendWelcomeEmail(to: string): Promise<void> {
     const { subject, html } = welcomeEmailTemplate();
 

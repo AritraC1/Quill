@@ -1,49 +1,51 @@
 import { z } from "zod";
 import { type StringValue } from "ms";
 
+// Defines and validates the required environment variables using Zod
 const envSchema = z.object({
-  // App
+  // App configuration
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
   PORT: z.coerce.number().default(3000),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 
-  // Database
+  // Database configuration
   DATABASE_URL: z.string().url(),
 
-  // Redis
+  // Redis configuration
   REDIS_URL: z.string().url(),
 
-  // Auth
+  // Auth configuration
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
-
   JWT_EXPIRES_IN: z
     .string()
     .default("15m")
     .transform((value) => value as StringValue),
-
   JWT_REFRESH_EXPIRES_IN: z
     .string()
     .default("7d")
     .transform((value) => value as StringValue),
 
-  // CORS (client origin, for allowed-origin config)
+  // CORS configuration (client origin, for allowed-origin config)
   CLIENT_URL: z.string().url().default("http://localhost:5173"),
 
-  // Resend
+  // Email service configuration (Resend)
   RESEND_API_KEY: z.string().startsWith("re_"),
   EMAIL_FROM: z.string().min(3).default("Quill <beth.t@example.com>"),
 });
 
+// Validates all environment variables at application startup
 const parsed = envSchema.safeParse(process.env);
 
+// Stops application startup if any environment variables are invalid
 if (!parsed.success) {
   console.error("Invalid environment variables:");
   console.error(JSON.stringify(parsed.error.flatten().fieldErrors, null, 2));
   process.exit(1);
 }
 
+// Exports validated and typed environment variables for application-wide use
 export const env = parsed.data;
 
 // Convenience flags used throughout the app
