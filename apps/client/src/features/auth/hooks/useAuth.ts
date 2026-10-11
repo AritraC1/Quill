@@ -1,13 +1,13 @@
 import { useState, useCallback, useEffect } from "react";
+import type { AuthTokens } from "../types/auth.types";
 import {
-  signUpApi,
-  requestOtpApi,
-  verifyOtpApi,
-  refreshTokenApi,
-  logoutApi,
   getStoredTokens,
+  logoutApi,
+  refreshTokenApi,
+  requestOtpApi,
+  signUpApi,
+  verifyOtpApi,
 } from "../api/auth.api";
-import type { AuthTokens } from "../types";
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;

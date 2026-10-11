@@ -1,9 +1,9 @@
 import { useState, type FormEvent, useEffect } from "react";
-import type { AuthPopupFormProps, View } from "../types";
 import { FaGoogle, FaFacebook } from "react-icons/fa";
 import { Mail, XIcon, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 
 import { useAuth } from "../hooks/useAuth";
+import type { AuthPopupFormProps, View } from "../types/auth.types";
 import SocialButton from "../../../components/ui/SocialButton";
 import RememberMe from "./RememberMe";
 

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../../auth/hooks/useAuth";
 import {
   Bookmark,
   TrendingUp,
@@ -10,6 +9,7 @@ import {
   PenSquare,
   LogOut,
 } from "lucide-react";
+import { useAuth } from "../../auth";
 
 interface Post {
   id: string;

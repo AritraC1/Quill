@@ -1,5 +1,4 @@
 // types/interfaces that are specific to authentication
-
 export type View =
   | "joinOptions"
   | "joinEmail"
