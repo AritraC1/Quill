@@ -5,13 +5,13 @@ import type {
   AuthResponseDTO,
   RefreshTokenDTO,
 } from "@quill/shared";
+import { API_ROUTES } from "../../../lib/api-routes";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:3000/api";
-
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 const TOKEN_STORAGE_KEY = "quill_access_token";
 const REFRESH_TOKEN_STORAGE_KEY = "quill_refresh_token";
 
+// Retrieves the access token and refresh token from localStorage.
 export const getStoredTokens = () => {
   return {
     accessToken: localStorage.getItem(TOKEN_STORAGE_KEY),
@@ -19,11 +19,15 @@ export const getStoredTokens = () => {
   };
 };
 
+// Stores the access token and refresh token in localStorage,
+// called after successful authentication or token refresh.
 export const setStoredTokens = (accessToken: string, refreshToken: string) => {
   localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
   localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
 };
 
+// Removes authentication tokens from localStorage
+// Used during logout or when token refresh fails
 export const clearStoredTokens = () => {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
   localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
@@ -59,25 +63,34 @@ async function sendRequest<T>(
   return data?.data ?? data;
 }
 
-// 1. Sign Up (Create Account)
-export async function signUpApi(payload: SignUpRequestDTO): Promise<{ id: string; name: string; email: string }> {
-  return sendRequest<{ id: string; name: string; email: string }>("/auth/sign-up", {
+// Sign Up (Create Account)
+export async function signUpApi(
+  payload: SignUpRequestDTO,
+): Promise<{ id: string; name: string; email: string }> {
+  return sendRequest<{ id: string; name: string; email: string }>(
+    API_ROUTES.AUTH.SIGN_UP,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+// Request OTP
+export async function requestOtpApi(
+  payload: RequestOtpDTO,
+): Promise<{ success: boolean }> {
+  return sendRequest<{ success: boolean }>(API_ROUTES.AUTH.REQUEST_OTP, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
-// 2. Request OTP
-export async function requestOtpApi(payload: RequestOtpDTO): Promise<{ success: boolean }> {
-  return sendRequest<{ success: boolean }>("/auth/request-otp", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-// 3. Verify OTP
-export async function verifyOtpApi(payload: VerifyOtpDTO): Promise<AuthResponseDTO> {
-  const data = await sendRequest<AuthResponseDTO>("/auth/verify-otp", {
+// Verify OTP
+export async function verifyOtpApi(
+  payload: VerifyOtpDTO,
+): Promise<AuthResponseDTO> {
+  const data = await sendRequest<AuthResponseDTO>(API_ROUTES.AUTH.VERIFY_OTP, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -87,7 +100,7 @@ export async function verifyOtpApi(payload: VerifyOtpDTO): Promise<AuthResponseD
   return data;
 }
 
-// 4. Refresh Token (Rotates refresh token and returns new pair)
+// Refresh Token (Rotates refresh token and returns new pair)
 let refreshPromise: Promise<AuthResponseDTO> | null = null;
 
 export async function refreshTokenApi(): Promise<AuthResponseDTO> {
@@ -105,10 +118,13 @@ export async function refreshTokenApi(): Promise<AuthResponseDTO> {
   refreshPromise = (async () => {
     try {
       const payload: RefreshTokenDTO = { refreshToken };
-      const data = await sendRequest<AuthResponseDTO>("/auth/refresh-token", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const data = await sendRequest<AuthResponseDTO>(
+        API_ROUTES.AUTH.REFRESH_TOKEN,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
 
       if (data?.accessToken && data?.refreshToken) {
         setStoredTokens(data.accessToken, data.refreshToken);
@@ -128,12 +144,12 @@ export async function refreshTokenApi(): Promise<AuthResponseDTO> {
   return refreshPromise;
 }
 
-// 5. Logout
+// Logout
 export async function logoutApi(): Promise<{ success: boolean }> {
   const { accessToken } = getStoredTokens();
   try {
     if (accessToken) {
-      await sendRequest<{ success: boolean }>("/auth/logout", {
+      await sendRequest<{ success: boolean }>(API_ROUTES.AUTH.LOGOUT, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -146,8 +162,8 @@ export async function logoutApi(): Promise<{ success: boolean }> {
   return { success: true };
 }
 
-// 6. Authenticated Fetch with Automatic Refresh Token Rotation
-export async function fetchWithAuth<T = any>(
+// Authenticated Fetch with Automatic Refresh Token Rotation
+export async function fetchWithAuth<T = unknown>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
@@ -174,12 +190,15 @@ export async function fetchWithAuth<T = any>(
 
   try {
     return await makeAttempt(accessToken);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // If unauthorized / token expired, rotate token once and retry
-    if (error?.message?.toLowerCase().includes("unauthorized") || error?.message?.toLowerCase().includes("token")) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+
+    if (message.includes("unauthorized") || message.includes("token")) {
       const newTokens = await refreshTokenApi();
       return await makeAttempt(newTokens.accessToken);
     }
+
     throw error;
   }
 }

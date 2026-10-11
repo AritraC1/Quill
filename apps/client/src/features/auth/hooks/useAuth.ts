@@ -9,6 +9,12 @@ import {
 } from "../api/auth.api";
 import type { AuthTokens } from "../types";
 
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string" && err) return err;
+  return fallback;
+}
+
 export function useAuth() {
   const [tokens, setTokens] = useState<AuthTokens | null>(() => {
     const { accessToken, refreshToken } = getStoredTokens();
@@ -23,32 +29,40 @@ export function useAuth() {
 
   const clearError = useCallback(() => setError(null), []);
 
-  // Check and refresh token on mount if needed
+  // Refresh token on mount if we only have a refresh token stored
   useEffect(() => {
-    const { refreshToken } = getStoredTokens();
-    if (refreshToken && !tokens?.accessToken) {
-      refreshTokenApi()
-        .then((res) => {
-          setTokens({
-            accessToken: res.accessToken,
-            refreshToken: res.refreshToken,
-          });
-        })
-        .catch(() => {
-          setTokens(null);
+    const { accessToken, refreshToken } = getStoredTokens();
+    if (!refreshToken || accessToken) return;
+
+    let cancelled = false;
+
+    refreshTokenApi()
+      .then((res) => {
+        if (cancelled) return;
+        setTokens({
+          accessToken: res.accessToken,
+          refreshToken: res.refreshToken,
         });
-    }
+      })
+      .catch(() => {
+        if (!cancelled) setTokens(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const signUp = useCallback(async (name: string, email: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const user = await signUpApi({ name: name.trim(), email: email.trim().toLowerCase() });
-      return user;
-    } catch (err: any) {
-      const msg = err.message || "Failed to create account";
-      setError(msg);
+      return await signUpApi({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+      });
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to create account"));
       throw err;
     } finally {
       setIsLoading(false);
@@ -59,11 +73,9 @@ export function useAuth() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await requestOtpApi({ email: email.trim().toLowerCase() });
-      return res;
-    } catch (err: any) {
-      const msg = err.message || "Failed to send verification code";
-      setError(msg);
+      return await requestOtpApi({ email: email.trim().toLowerCase() });
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to send verification code"));
       throw err;
     } finally {
       setIsLoading(false);
@@ -83,9 +95,8 @@ export function useAuth() {
         refreshToken: authRes.refreshToken,
       });
       return authRes;
-    } catch (err: any) {
-      const msg = err.message || "Invalid or expired OTP";
-      setError(msg);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Invalid or expired OTP"));
       throw err;
     } finally {
       setIsLoading(false);
@@ -98,8 +109,8 @@ export function useAuth() {
     try {
       await logoutApi();
       setTokens(null);
-    } catch (err: any) {
-      setError(err.message || "Logout failed");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Logout failed"));
     } finally {
       setIsLoading(false);
     }

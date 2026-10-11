@@ -2,65 +2,10 @@ import { useState, type FormEvent, useEffect } from "react";
 import type { AuthPopupFormProps, View } from "../types";
 import { FaGoogle, FaFacebook } from "react-icons/fa";
 import { Mail, XIcon, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
+
 import { useAuth } from "../hooks/useAuth";
-
-const SocialButton = ({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick?: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className="relative w-full rounded-full border border-neutral-900 py-3.5 px-5 text-[15px] font-medium text-neutral-900 transition-colors hover:bg-neutral-100 active:bg-neutral-200"
-  >
-    <span className="absolute left-5 top-1/2 -translate-y-1/2">{icon}</span>
-    {label}
-  </button>
-);
-
-const RememberMe = ({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) => (
-  <label className="flex select-none items-center justify-center gap-2.5 text-[15px] text-neutral-800">
-    <span className="relative inline-flex h-4.5 w-4.5 shrink-0">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="peer sr-only"
-      />
-      <span className="pointer-events-none flex h-4.5 w-4.5 items-center justify-center rounded-sm border border-neutral-900 bg-white peer-checked:bg-neutral-900">
-        {checked && (
-          <svg
-            width="11"
-            height="9"
-            viewBox="0 0 11 9"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M1 4.3 3.8 7 10 1"
-              stroke="white"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        )}
-      </span>
-    </span>
-    Remember me for faster sign in
-  </label>
-);
+import SocialButton from "../../../components/ui/SocialButton";
+import RememberMe from "./RememberMe";
 
 const AuthPopupForm = ({
   isOpen,
@@ -77,7 +22,8 @@ const AuthPopupForm = ({
   const [targetEmail, setTargetEmail] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
-  const { signUp, requestOtp, verifyOtp, isLoading, error, clearError } = useAuth();
+  const { signUp, requestOtp, verifyOtp, isLoading, error, clearError } =
+    useAuth();
 
   // Reset view when opened
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
@@ -433,10 +379,14 @@ const AuthPopupForm = ({
                 Enter OTP Code
               </h1>
               <p className="text-center text-sm text-neutral-600">
-                We sent a 4-digit code to <span className="font-medium text-neutral-900">{targetEmail}</span>
+                We sent a 4-digit code to{" "}
+                <span className="font-medium text-neutral-900">
+                  {targetEmail}
+                </span>
               </p>
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 border border-emerald-200">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Test code: <strong>0000</strong>
+                <CheckCircle2 className="w-3.5 h-3.5" /> Test code:{" "}
+                <strong>0000</strong>
               </span>
             </div>
 
