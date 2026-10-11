@@ -3,7 +3,7 @@ import { createBrowserRouter } from "react-router-dom";
 import LandingPage from "../pages/LandingPage";
 import StatusPage from "../pages/StatusPage";
 import NotFoundPage from "../pages/NotFoundPage";
-import { OnboardingView } from "../features/onboarding";
+import { OnboardingView } from "../features/auth";
 import { FeedView } from "../features/feed";
 
 const Router = createBrowserRouter([

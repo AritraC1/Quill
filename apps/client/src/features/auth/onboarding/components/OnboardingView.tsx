@@ -1,7 +1,8 @@
 import { useState, useRef, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Camera, Check, Sparkles, ArrowRight, Loader2, BookOpen, PenTool } from "lucide-react";
-import type { GenreOption } from "../types";
+import type { GenreOption } from "../types/onboarding.types";
+
 
 const GENRES: GenreOption[] = [
   { id: "essays", name: "Essays & Reflection", description: "Long-form personal narratives & thoughtful observations" },
