@@ -8,7 +8,7 @@ import AuthPopupForm from "../features/auth/components/AuthPopupForm";
 
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, isInitializing, logout } = useAuth();
 
   // Controls the auth modal, and which panel ("join" vs "sign in") it opens on.
   const [authOpen, setAuthOpen] = useState(false);
@@ -19,6 +19,16 @@ const LandingPage: React.FC = () => {
   const openAuth = (view: "joinOptions" | "signinOptions") => {
     setAuthView(view);
     setAuthOpen(true);
+  };
+
+  // Signed in → go straight into the app. Signed out → open the auth modal.
+  const handleStart = () => {
+    if (isInitializing) return; // session still being restored, don't open the modal
+    if (isAuthenticated) {
+      navigate("/feed"); // change to "/write" once that route exists
+    } else {
+      openAuth("joinOptions");
+    }
   };
 
   return (
@@ -38,15 +48,25 @@ const LandingPage: React.FC = () => {
             </span>
           </a>
 
+          {/* Desktop nav */}
           <nav className="hidden items-center gap-6 md:flex">
             {isAuthenticated ? (
-              <button
-                type="button"
-                onClick={logout}
-                className="rounded-full border border-[#232A3B] px-5 py-2.5 text-[15px] font-medium text-[#232A3B] transition-colors hover:bg-[#232A3B] hover:text-[#F7F3E9]"
-              >
-                Sign out
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="text-[15px] font-medium text-[#232A3B] hover:text-[#3B6255] transition-colors"
+                >
+                  Sign out
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  className="rounded-full bg-[#232A3B] px-5 py-2.5 text-[15px] font-medium text-[#F7F3E9] transition-colors hover:bg-[#3B6255]"
+                >
+                  Go to Quill
+                </button>
+              </>
             ) : (
               <>
                 <button
@@ -58,7 +78,7 @@ const LandingPage: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => openAuth("joinOptions")}
+                  onClick={handleStart}
                   className="rounded-full bg-[#232A3B] px-5 py-2.5 text-[15px] font-medium text-[#F7F3E9] transition-colors hover:bg-[#3B6255]"
                 >
                   Start writing
@@ -67,24 +87,24 @@ const LandingPage: React.FC = () => {
             )}
           </nav>
 
+          {/* Mobile nav */}
           <div className="md:hidden flex items-center gap-3">
-            {isAuthenticated ? (
+            {isAuthenticated && (
               <button
                 type="button"
                 onClick={logout}
-                className="rounded-full border border-[#232A3B] px-4 py-2 text-sm font-medium text-[#232A3B]"
+                className="text-sm font-medium text-[#232A3B]"
               >
                 Sign out
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => openAuth("joinOptions")}
-                className="rounded-full bg-[#232A3B] px-4 py-2 text-sm font-medium text-[#F7F3E9]"
-              >
-                Start writing
-              </button>
             )}
+            <button
+              type="button"
+              onClick={handleStart}
+              className="rounded-full bg-[#232A3B] px-4 py-2 text-sm font-medium text-[#F7F3E9]"
+            >
+              {isAuthenticated ? "Go to Quill" : "Start writing"}
+            </button>
           </div>
         </div>
       </header>
@@ -107,17 +127,19 @@ const LandingPage: React.FC = () => {
             <div className="relative mt-9 inline-flex flex-col items-start sm:mt-10 sm:flex-row sm:items-center sm:gap-6">
               <button
                 type="button"
-                onClick={() => openAuth("joinOptions")}
+                onClick={handleStart}
                 className="inline-block rounded-full bg-[#232A3B] px-8 py-4 text-base font-medium text-[#F7F3E9] transition-colors hover:bg-[#3B6255]"
               >
-                Start writing
+                {isAuthenticated ? "Continue writing" : "Start writing"}
               </button>
-              <span className="mt-3 flex items-center gap-2 sm:mt-0">
-                <CurvedArrow className="hidden h-8 w-12 sm:block" />
-                <span className="font-hand -rotate-2 text-2xl text-[#3B6255]">
-                  free while you're drafting
+              {!isAuthenticated && (
+                <span className="mt-3 flex items-center gap-2 sm:mt-0">
+                  <CurvedArrow className="hidden h-8 w-12 sm:block" />
+                  <span className="font-hand -rotate-2 text-2xl text-[#3B6255]">
+                    free while you're drafting
+                  </span>
                 </span>
-              </span>
+              )}
             </div>
           </div>
 

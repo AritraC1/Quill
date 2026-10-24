@@ -7,14 +7,20 @@ import ProfilePage from "../pages/ProfilePage";
 import { OnboardingView } from "../features/auth";
 import { FeedView } from "../features/feed";
 import { ProtectedRoute } from "./ProtectedRoute";
+import { PublicOnlyRoute } from "./PublicOnlyRoute";
 
 const Router = createBrowserRouter([
   {
     path: "/",
     errorElement: <NotFoundPage />,
     children: [
-      // Public
-      { index: true, element: <LandingPage /> },
+      // Public, but signed-in users are sent on to the app
+      {
+        element: <PublicOnlyRoute />,
+        children: [{ index: true, element: <LandingPage /> }],
+      },
+
+      // Public for everyone
       { path: "status", element: <StatusPage /> },
 
       // Private
