@@ -1,304 +1,370 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  Bookmark,
-  TrendingUp,
-  Clock,
-  Sparkles,
-  Search,
-  PenSquare,
-  LogOut,
-} from "lucide-react";
-import { useAuth } from "../../auth";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { Sparkles, Clock, Users, Loader2 } from "lucide-react";
+import { AppShell } from "../../../components/layout/AppShell";
+import { StoryCard } from "../../../components/ui/StoryCard";
+import { useStoredSet } from "../../../hooks/useStoredSet";
+import { AUTHORS, CURRENT_USER_HANDLE } from "../../../data/mockProfiles";
+import { STORIES, DEFAULT_SAVED } from "../../../data/stories";
 
-interface Post {
-  id: string;
-  title: string;
-  excerpt: string;
-  author: {
-    name: string;
-    avatar?: string;
-  };
-  genre: string;
-  readTime: string;
-  date: string;
-}
+const PAGE_SIZE = 5;
 
-const SAMPLE_POSTS: Post[] = [
-  {
-    id: "1",
-    title: "The Architecture of Unhurried Thought",
-    excerpt:
-      "When we strip software down to its typographical bone, we invite contemplation back into a world hyperactive on engagement metrics.",
-    author: { name: "Bethany Torres" },
-    genre: "Essays & Reflection",
-    readTime: "6 min read",
-    date: "Oct 2",
-  },
-  {
-    id: "2",
-    title: "Why Monolithic Craftsmanship Still Matters",
-    excerpt:
-      "Modern development praises fragmented services, but cohesive systems built with care cultivate durability and quiet satisfaction.",
-    author: { name: "Marcus Chen" },
-    genre: "Technology & Future",
-    readTime: "9 min read",
-    date: "Sep 28",
-  },
-  {
-    id: "3",
-    title: "Notes on Typography and the Psychology of Silence",
-    excerpt:
-      "Kerning and generous margins do not simply organize words; they create room for the reader to breathe between paragraphs.",
-    author: { name: "Elena Rostova" },
-    genre: "Design & Craft",
-    readTime: "4 min read",
-    date: "Sep 25",
-  },
-  {
-    id: "4",
-    title: "Epictetus on Modern Notification Exhaustion",
-    excerpt:
-      "What would the Stoics make of constant pings? Epictetus understood that peace is an active filtering of external stimuli.",
-    author: { name: "Julian Vance" },
-    genre: "Philosophy & Mind",
-    readTime: "8 min read",
-    date: "Sep 22",
-  },
-];
+const TABS = [
+  { id: "for-you", label: "For you", Icon: Sparkles },
+  { id: "following", label: "Following", Icon: Users },
+  { id: "latest", label: "Latest", Icon: Clock },
+] as const;
+
+type Tab = (typeof TABS)[number]["id"];
+
+const Empty = ({ title, body }: { title: string; body: string }) => (
+  <div className="py-16 text-center">
+    <p className="font-editorial text-[20px] text-[#1B1F1C]">{title}</p>
+    <p className="mt-2 text-[14px] text-[#5C625E] max-w-sm mx-auto">{body}</p>
+  </div>
+);
+
+const FollowButton = ({
+  following,
+  onClick,
+}: {
+  following: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={following}
+    className={`h-7 shrink-0 rounded-full px-3 text-[12px] font-medium border transition-colors ${
+      following
+        ? "border-transparent bg-[#EAE6DD] text-[#5C625E] hover:bg-[#DFDBD2]"
+        : "border-[#E6E2D8] text-[#1F3D2F] hover:border-[#1F3D2F]"
+    }`}
+  >
+    {following ? "Following" : "Follow"}
+  </button>
+);
 
 export const FeedView = () => {
-  const { logout } = useAuth();
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"for-you" | "latest" | "bookmarks">("for-you");
+  const [tab, setTab] = useState<Tab>("for-you");
+  const [topic] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [shown, setShown] = useState(PAGE_SIZE);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  interface OnboardingProfile {
-    avatarUrl?: string | null;
-    bio?: string;
-    genres?: string[];
-  }
+  // Same keys as the profile page, so Saved and Following stay in sync everywhere
+  const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
+  const following = useStoredSet("quill_following", [
+    "elenarostova",
+    "bethanytorres",
+  ]);
 
-  const [onboardingProfile] = useState<OnboardingProfile | null>(() => {
-    try {
-      const saved = localStorage.getItem("quill_onboarding_profile");
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const loadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2000);
+  }, []);
+  useEffect(
+    () => () => {
+      clearTimeout(toastTimer.current);
+      clearTimeout(loadTimer.current);
+    },
+    [],
+  );
+
+  const visible = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let list = STORIES.map((s) => ({
+      ...s,
+      isBookmarked: bookmarks.items.includes(s.id),
+    }));
+    if (tab === "following")
+      list = list.filter((s) =>
+        following.items.includes(s.author.handle!.slice(1)),
+      );
+    if (topic !== "All") list = list.filter((s) => s.topic === topic);
+    if (q) {
+      list = list.filter((s) =>
+        `${s.title} ${s.excerpt} ${s.author.name} ${s.topic}`
+          .toLowerCase()
+          .includes(q),
+      );
     }
-  });
+    if (tab === "latest") list = [...list].sort((a, b) => a.age - b.age);
+    return list;
+  }, [tab, topic, searchQuery, bookmarks.items, following.items]);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate("/");
+  const page = visible.slice(0, shown);
+  const hasMore = shown < visible.length;
+
+  // Infinite scroll
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore || isLoadingMore) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setIsLoadingMore(true);
+        loadTimer.current = setTimeout(() => {
+          setShown((n) => n + PAGE_SIZE); // TODO: replace with a real paginated fetch
+          setIsLoadingMore(false);
+        }, 500);
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, isLoadingMore]);
+
+  const changeTab = (t: Tab) => {
+    setTab(t);
+    setShown(PAGE_SIZE);
   };
 
+  // const changeTopic = (t: string) => {
+  //   setTopic(t);
+  //   setShown(PAGE_SIZE);
+  // };
+
+  const changeSearch = (v: string) => {
+    setSearchQuery(v);
+    setShown(PAGE_SIZE);
+  };
+
+  const handleBookmark = (storyId: string, next: boolean) => {
+    bookmarks.set(storyId, next);
+    showToast(next ? "Saved to reading list" : "Removed from saved");
+  };
+
+  const toggleFollow = (handle: string) => {
+    const on = !following.has(handle);
+    following.set(handle, on);
+    showToast(
+      on
+        ? `Following ${AUTHORS[handle].name}`
+        : `Unfollowed ${AUTHORS[handle].name}`,
+    );
+  };
+
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const firstName = AUTHORS[CURRENT_USER_HANDLE]?.name.split(" ")[0] ?? "there";
+
+  const suggestions = Object.keys(AUTHORS)
+    .filter((h) => h !== CURRENT_USER_HANDLE && !following.has(h))
+    .slice(0, 3);
+  const picks = STORIES.filter((s) => s.isStaffPick).slice(0, 3);
+
+  const emptyState = searchQuery.trim() ? (
+    <Empty
+      title={`No stories match “${searchQuery.trim()}”`}
+      body="Try a different word, or browse a topic instead."
+    />
+  ) : tab === "following" ? (
+    <Empty
+      title="Follow a few writers"
+      body="Their new stories will show up here. Try the suggestions on the right, or switch to For you and follow someone."
+    />
+  ) : (
+    <Empty
+      title={`No stories in ${topic} yet`}
+      body="Check back soon, or pick another topic."
+    />
+  );
+
   return (
-    <div className="min-h-screen w-full bg-[#F7F3E9] text-[#232A3B] font-['Inter',ui-sans-serif,system-ui]">
-      <div className="pointer-events-none fixed inset-0 grain" aria-hidden="true" />
-
-      {/* Navigation */}
-      <header className="sticky top-0 z-40 border-b border-[#232A3B]/10 bg-[#F7F3E9]/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-2">
-              <span className="font-editorial text-2xl font-semibold tracking-tight">✍🏻 Quill</span>
-            </Link>
-
-            <div className="hidden sm:flex items-center gap-2 rounded-full border border-[#232A3B]/15 bg-white/70 px-3.5 py-1.5 text-xs text-[#232A3B]">
-              <Search className="w-3.5 h-3.5 text-[#232A3B]/50" />
-              <input
-                type="text"
-                placeholder="Search stories & authors..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none placeholder:text-[#232A3B]/40 text-xs w-48"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-full bg-[#232A3B] px-4 py-2 text-xs font-medium text-[#F7F3E9] hover:bg-[#3B6255] transition-colors"
-            >
-              <PenSquare className="w-3.5 h-3.5" />
-              Draft story
-            </button>
-
-            {onboardingProfile?.avatarUrl ? (
-              <img
-                src={onboardingProfile.avatarUrl}
-                alt="Profile"
-                className="h-8 w-8 rounded-full border border-[#232A3B]/20 object-cover"
-              />
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#232A3B] text-xs font-medium text-white">
-                Q
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="p-1.5 rounded-full text-[#232A3B]/60 hover:text-[#232A3B] transition-colors"
-              title="Sign out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+    <AppShell searchQuery={searchQuery} onSearchChange={changeSearch}>
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-full bg-[#1B1F1C] px-4 py-2.5 text-[13px] font-medium text-white shadow-xl animate-fade-in"
+        >
+          {toast}
         </div>
-      </header>
+      )}
 
-      {/* Main Feed Content */}
-      <main className="mx-auto max-w-5xl px-5 py-8 grid grid-cols-1 md:grid-cols-3 gap-10">
-        {/* Left / Center Stories */}
-        <div className="md:col-span-2 flex flex-col gap-6">
-          {/* Feed Filter Tabs */}
-          <div className="flex items-center gap-6 border-b border-[#232A3B]/10 pb-3 text-sm">
-            <button
-              type="button"
-              onClick={() => setActiveTab("for-you")}
-              className={`inline-flex items-center gap-1.5 pb-3 -mb-3 transition-colors ${
-                activeTab === "for-you"
-                  ? "border-b-2 border-[#232A3B] font-medium text-[#232A3B]"
-                  : "text-[#232A3B]/60 hover:text-[#232A3B]"
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#3B6255]" />
-              For You
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("latest")}
-              className={`inline-flex items-center gap-1.5 pb-3 -mb-3 transition-colors ${
-                activeTab === "latest"
-                  ? "border-b-2 border-[#232A3B] font-medium text-[#232A3B]"
-                  : "text-[#232A3B]/60 hover:text-[#232A3B]"
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Latest
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("bookmarks")}
-              className={`inline-flex items-center gap-1.5 pb-3 -mb-3 transition-colors ${
-                activeTab === "bookmarks"
-                  ? "border-b-2 border-[#232A3B] font-medium text-[#232A3B]"
-                  : "text-[#232A3B]/60 hover:text-[#232A3B]"
-              }`}
-            >
-              <Bookmark className="w-3.5 h-3.5" />
-              Saved
-            </button>
-          </div>
+      <main className="mx-auto max-w-270 px-4 sm:px-6 py-6 md:py-8 grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 lg:gap-16">
+        {/* Main column */}
+        <div className="md:col-span-8 flex flex-col min-w-0">
+          <h1 className="font-editorial text-[28px] sm:text-[32px] leading-tight text-[#1B1F1C] tracking-tight">
+            {greeting}, {firstName}
+          </h1>
+          <p className="mt-1 mb-5 text-[15px] text-[#5C625E]">
+            Pick up where your curiosity left off.
+          </p>
 
-          {/* Posts List */}
-          <div className="flex flex-col divide-y divide-[#232A3B]/10">
-            {SAMPLE_POSTS.map((post) => (
-              <article key={post.id} className="py-6 group">
-                <div className="flex items-center gap-2 text-xs text-[#232A3B]/60 mb-2">
-                  <span className="font-medium text-[#232A3B]">{post.author.name}</span>
-                  <span>·</span>
-                  <span className="rounded-full bg-[#3B6255]/10 px-2 py-0.5 text-[11px] font-medium text-[#3B6255]">
-                    {post.genre}
-                  </span>
-                  <span>·</span>
-                  <span>{post.readTime}</span>
-                </div>
-
-                <h2 className="font-editorial text-2xl font-semibold tracking-tight text-[#232A3B] group-hover:text-[#3B6255] transition-colors cursor-pointer">
-                  {post.title}
-                </h2>
-
-                <p className="mt-2 text-sm text-[#232A3B]/75 leading-relaxed">
-                  {post.excerpt}
-                </p>
-
-                <div className="mt-4 flex items-center justify-between text-xs text-[#232A3B]/50">
-                  <span>Published {post.date}</span>
-                  <button
-                    type="button"
-                    className="p-1 rounded text-[#232A3B]/40 hover:text-[#232A3B] transition-colors"
-                  >
-                    <Bookmark className="w-4 h-4" />
-                  </button>
-                </div>
-              </article>
+          {/* Tabs */}
+          <div
+            role="tablist"
+            className="mt-4 flex items-center gap-7 border-b border-[#E6E2D8]"
+          >
+            {TABS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => changeTab(id)}
+                className={`relative inline-flex items-center gap-1.5 pb-3 text-[15px] transition-colors ${
+                  tab === id
+                    ? "text-[#1F3D2F] font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[#1F3D2F]"
+                    : "text-[#5C625E] hover:text-[#1B1F1C]"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
             ))}
           </div>
-        </div>
 
-        {/* Right Sidebar */}
-        <aside className="flex flex-col gap-6">
-          {/* Profile Card if onboarded */}
-          {onboardingProfile && (
-            <div className="rounded-2xl border border-[#232A3B]/10 bg-white/70 p-5 backdrop-blur-sm">
-              <div className="flex items-center gap-3">
-                {onboardingProfile.avatarUrl ? (
-                  <img
-                    src={onboardingProfile.avatarUrl}
-                    alt="Author avatar"
-                    className="h-12 w-12 rounded-full object-cover border border-[#232A3B]/20"
-                  />
-                ) : (
-                  <div className="h-12 w-12 rounded-full bg-[#232A3B] text-white flex items-center justify-center font-medium">
-                    Q
-                  </div>
-                )}
-                <div>
-                  <h4 className="font-medium text-sm text-[#232A3B]">Your Quill Profile</h4>
-                  <span className="text-xs text-[#3B6255]">Reader & Writer</span>
+          {/* Stories */}
+          {visible.length === 0 ? (
+            emptyState
+          ) : (
+            <div className="flex flex-col">
+              {page.map((story) => (
+                <StoryCard
+                  key={story.id}
+                  story={story}
+                  layout="list"
+                  onBookmarkToggle={handleBookmark}
+                />
+              ))}
+
+              {hasMore ? (
+                <div
+                  ref={sentinelRef}
+                  className="py-8 flex justify-center"
+                  aria-label="Loading more stories"
+                >
+                  <Loader2 className="w-5 h-5 animate-spin text-[#1F3D2F]" />
                 </div>
-              </div>
-
-              {onboardingProfile.bio && (
-                <p className="mt-3 text-xs text-[#232A3B]/70 italic leading-relaxed">
-                  "{onboardingProfile.bio}"
+              ) : (
+                <p className="py-10 text-center text-[13px] text-[#8A8F8B]">
+                  You’re all caught up.{" "}
+                  <Link to="/write" className="text-[#1F3D2F] hover:underline">
+                    Time to write something?
+                  </Link>
                 </p>
-              )}
-
-              {onboardingProfile.genres && onboardingProfile.genres.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-[#232A3B]/10">
-                  <span className="text-[11px] font-medium text-[#232A3B]/60 uppercase tracking-wider block mb-2">
-                    Followed Realms
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {onboardingProfile.genres.map((g) => (
-                      <span
-                        key={g}
-                        className="rounded-full border border-[#3B6255]/20 bg-[#3B6255]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#3B6255] capitalize"
-                      >
-                        {g}
-                      </span>
-                    ))}
-                  </div>
-                </div>
               )}
             </div>
           )}
+        </div>
 
-          {/* Curated Recommendations widget */}
-          <div className="rounded-2xl border border-[#232A3B]/10 bg-white/70 p-5 backdrop-blur-sm">
-            <h3 className="font-editorial text-lg font-semibold text-[#232A3B] flex items-center gap-2 mb-3">
-              <TrendingUp className="w-4 h-4 text-[#3B6255]" />
-              Reading Lists
+        {/* Sidebar: desktop only */}
+        <aside className="hidden md:flex md:col-span-4 flex-col gap-8 md:sticky md:top-24 md:self-start md:pl-4">
+          <section className="rounded-xl border border-[#E6E2D8] p-4">
+            <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3">
+              Today’s prompt
             </h3>
-            <ul className="flex flex-col gap-3 text-xs">
-              <li className="flex flex-col gap-1 cursor-pointer hover:text-[#3B6255] transition-colors">
-                <span className="font-medium text-[#232A3B]">The Return of Personal Essays</span>
-                <span className="text-[#232A3B]/60">12 curated essays · Curated by Editors</span>
-              </li>
-              <li className="flex flex-col gap-1 cursor-pointer hover:text-[#3B6255] transition-colors">
-                <span className="font-medium text-[#232A3B]">Slow Computing in 2026</span>
-                <span className="text-[#232A3B]/60">8 deep dives into low-distraction workflows</span>
-              </li>
+            <p className="font-editorial text-[18px] leading-snug text-[#1B1F1C]">
+              What is something you stopped noticing this year?
+            </p>
+            <Link
+              to="/write"
+              className="mt-4 inline-flex h-8 items-center rounded-full bg-[#1F3D2F] px-4 text-[13px] font-medium text-white hover:bg-[#2A5240] transition-colors"
+            >
+              Write about this
+            </Link>
+          </section>
+
+          <section>
+            <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3">
+              Who to follow
+            </h3>
+            {suggestions.length === 0 ? (
+              <p className="text-[13px] text-[#8A8F8B]">
+                You’re following everyone here.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {suggestions.map((h) => {
+                  const a = AUTHORS[h];
+                  return (
+                    <li key={h} className="flex items-center gap-3">
+                      <Link
+                        to={`/u/${h}`}
+                        className="flex min-w-0 flex-1 items-center gap-3"
+                      >
+                        <span
+                          className={`w-8 h-8 shrink-0 rounded-full ${a.color} text-white font-editorial text-[13px] flex items-center justify-center`}
+                        >
+                          {a.name[0]}
+                        </span>
+                        <span className="min-w-0 leading-tight">
+                          <span className="block text-[14px] font-medium text-[#1B1F1C] truncate">
+                            {a.name}
+                          </span>
+                          <span className="block text-[12px] text-[#8A8F8B] truncate">
+                            {a.bio}
+                          </span>
+                        </span>
+                      </Link>
+                      <FollowButton
+                        following={false}
+                        onClick={() => toggleFollow(h)}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section>
+            <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3">
+              Explore topics
+            </h3>
+            {/* <div className="flex flex-wrap gap-2">
+              {TOPICS.slice(1).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    changeTopic(t);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="inline-flex h-7 items-center rounded-full bg-[#EAE6DD] px-3.5 text-[12px] text-[#1B1F1C] hover:bg-[#DFDBD2] transition-colors"
+                >
+                  {t}
+                </button>
+              ))}
+            </div> */}
+          </section>
+
+          <section>
+            <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3">
+              Best picks
+            </h3>
+            <ul className="space-y-3">
+              {picks.map((s) => (
+                <li key={s.id}>
+                  <p className="font-editorial text-[15px] leading-snug text-[#1B1F1C]">
+                    {s.title}
+                  </p>
+                  <Link
+                    to={`/u/${s.author.handle!.slice(1)}`}
+                    className="text-[12px] text-[#8A8F8B] hover:text-[#1F3D2F]"
+                  >
+                    {s.author.name}
+                  </Link>
+                </li>
+              ))}
             </ul>
-          </div>
+          </section>
         </aside>
       </main>
-    </div>
+    </AppShell>
   );
 };
 

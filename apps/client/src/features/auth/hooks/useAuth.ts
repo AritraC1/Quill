@@ -24,6 +24,12 @@ export function useAuth() {
     return null;
   });
 
+  // If there is only a refresh token in storage, we need to await the initial token refresh
+  const [isInitializing, setIsInitializing] = useState(() => {
+    const { accessToken, refreshToken } = getStoredTokens();
+    return Boolean(refreshToken && !accessToken);
+  });
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,20 +38,31 @@ export function useAuth() {
   // Refresh token on mount if we only have a refresh token stored
   useEffect(() => {
     const { accessToken, refreshToken } = getStoredTokens();
-    if (!refreshToken || accessToken) return;
+
+    if (!refreshToken || accessToken) {
+      return;
+    }
 
     let cancelled = false;
 
     refreshTokenApi()
       .then((res) => {
         if (cancelled) return;
+
         setTokens({
           accessToken: res.accessToken,
           refreshToken: res.refreshToken,
         });
       })
       .catch(() => {
-        if (!cancelled) setTokens(null);
+        if (!cancelled) {
+          setTokens(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsInitializing(false);
+        }
       });
 
     return () => {
@@ -119,6 +136,7 @@ export function useAuth() {
 
   return {
     isAuthenticated: Boolean(tokens?.accessToken),
+    isInitializing,
     tokens,
     isLoading,
     error,

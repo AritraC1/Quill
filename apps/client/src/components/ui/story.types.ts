@@ -1,0 +1,22 @@
+export interface StoryAuthor {
+  name: string;
+  avatar?: string;
+  handle?: string;
+}
+
+export interface Story {
+  id: string;
+  title: string;
+  excerpt: string;
+  author: StoryAuthor;
+  topic: string;
+  readTime: string;
+  publishedDate: string;
+  imageUrl?: string;
+  likesCount?: number;
+  commentsCount?: number;
+  isBookmarked?: boolean;
+  isPinned?: boolean;
+  isStaffPick?: boolean;
+  iconType?: "letter" | "quill" | "bell";
+}
