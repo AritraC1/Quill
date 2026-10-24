@@ -149,8 +149,12 @@ const LandingPage: React.FC = () => {
         isOpen={authOpen}
         onClose={() => setAuthOpen(false)}
         initialView={authView}
-        onAuthSuccess={() => {
-          navigate("/onboarding");
+        onAuthSuccess={(tokens) => {
+          if (tokens.onboardingCompleted) {
+            navigate("/feed");
+          } else {
+            navigate("/onboarding");
+          }
         }}
       />
     </div>

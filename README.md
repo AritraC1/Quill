@@ -1,6 +1,6 @@
 # Quill
 
-Quill is a full-featured blog publishing and reading platform — built for authors to write and share posts, and for readers to discover content through personalized feeds, engagement, and fast, reliable performance at scale.
+Quill is a full-featured blog publishing and reading platform — built for people to write, share posts, discover content through personalized feeds, engagement, and fast, reliable performance at scale.
 
 ## Tech Stack
 
@@ -11,7 +11,7 @@ Quill is a full-featured blog publishing and reading platform — built for auth
 - **Messaging:** Message broker for pub/sub between services
 - **Package manager:** Bun (monorepo via Bun workspaces)
 - **Containerization:** Docker + Docker Compose
-- **Deployment:** Hostinger VPS + Caddy (reverse proxy, auto HTTPS) + Cloudflare (CDN)
+- **Deployment:** Hostinger VPS
 
 ## Monorepo Structure
 
@@ -62,6 +62,7 @@ This starts:
 ```bash
 bun run dev:server     # run server only
 bun run dev:client     # run client only
+bun run dev:worker     # run worker only
 bun run build          # build all workspaces
 ```
 

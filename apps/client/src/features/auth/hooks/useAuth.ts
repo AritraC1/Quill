@@ -93,6 +93,7 @@ export function useAuth() {
       setTokens({
         accessToken: authRes.accessToken,
         refreshToken: authRes.refreshToken,
+        onboardingCompleted: authRes.onboardingCompleted,
       });
       return authRes;
     } catch (err: unknown) {

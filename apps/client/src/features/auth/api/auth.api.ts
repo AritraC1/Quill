@@ -4,6 +4,7 @@ import type {
   VerifyOtpDTO,
   AuthResponseDTO,
   RefreshTokenDTO,
+  OnboardRequestDTO,
 } from "@quill/shared";
 import { API_ROUTES } from "../../../lib/api-routes";
 
@@ -201,4 +202,14 @@ export async function fetchWithAuth<T = unknown>(
 
     throw error;
   }
+}
+
+// Complete Onboarding
+export async function onboardApi(
+  payload: OnboardRequestDTO,
+): Promise<{ success: boolean }> {
+  return fetchWithAuth<{ success: boolean }>(API_ROUTES.ONBOARDING.ONBOARD, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

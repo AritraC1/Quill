@@ -1,4 +1,4 @@
-import type { SignUpRequestDTO } from "@quill/shared";
+import type { OnboardRequestDTO, SignUpRequestDTO } from "@quill/shared";
 import { pool } from "../../core/database/db";
 import type { UserModel } from "./user.model";
 
@@ -33,6 +33,31 @@ class UserRepository {
 
     const result = await pool.query<UserModel>(query, [data.name, data.email]);
     return result.rows[0]!;
+  }
+
+  // complete onboarding
+  async completeOnboarding(
+    userId: string,
+    data: OnboardRequestDTO,
+  ): Promise<UserModel | null> {
+    const query = `
+    UPDATE users
+    SET fav_genre = $2,
+        avatar = COALESCE($3, avatar),
+        bio = COALESCE($4, bio),
+        onboarding_completed = TRUE
+    WHERE id = $1
+    AND onboarding_completed = FALSE
+    RETURNING *;
+  `;
+
+    const result = await pool.query<UserModel>(query, [
+      userId,
+      data.favGenre,
+      data.avatar ?? null,
+      data.bio ?? null,
+    ]);
+    return result.rows[0] ?? null;
   }
 }
 

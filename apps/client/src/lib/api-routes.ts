@@ -8,7 +8,7 @@ export const API_ROUTES = {
     REFRESH_TOKEN: "/auth/refresh-token",
     LOGOUT: "/auth/logout",
   },
-  //   ONBOARDING: {
-  //     ONBOARD: "/onboard/onboarding"
-  //   }
+  ONBOARDING: {
+    ONBOARD: "/auth/onboard",
+  },
 } as const;

@@ -10,6 +10,8 @@ bun run dev:server &
 # Run client in the background
 bun run dev:client &
 
-# Wait for both background processes to finish
-wait
+# Run worker in the background
+bun run dev:worker &
 
+# Wait for all background processes to finish
+wait

@@ -126,8 +126,12 @@ class AuthService {
     // Generate Refresh Token
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
 
-    // Return Tokens
-    return { accessToken, refreshToken };
+    // Return Tokens and onboarding status
+    return {
+      accessToken,
+      refreshToken,
+      onboardingCompleted: Boolean(user.onboarding_completed),
+    };
   }
 
   // Revoke all OTPs for a user

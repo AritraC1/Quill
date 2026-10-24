@@ -9,6 +9,7 @@ export type View =
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+  onboardingCompleted?: boolean;
 }
 
 export interface AuthPopupFormProps {
