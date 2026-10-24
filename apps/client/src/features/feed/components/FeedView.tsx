@@ -9,12 +9,21 @@ import { STORIES, DEFAULT_SAVED } from "../../../data/stories";
 
 const PAGE_SIZE = 5;
 
+const TOPICS = [
+  "All",
+  "Essays",
+  "Design",
+  "Technology",
+  "Philosophy",
+  "Culture",
+  "Science",
+];
+
 const TABS = [
   { id: "for-you", label: "For you", Icon: Sparkles },
   { id: "following", label: "Following", Icon: Users },
   { id: "latest", label: "Latest", Icon: Clock },
 ] as const;
-
 type Tab = (typeof TABS)[number]["id"];
 
 const Empty = ({ title, body }: { title: string; body: string }) => (
@@ -47,7 +56,7 @@ const FollowButton = ({
 
 export const FeedView = () => {
   const [tab, setTab] = useState<Tab>("for-you");
-  const [topic] = useState("All");
+  const [topic, setTopic] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [shown, setShown] = useState(PAGE_SIZE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -55,6 +64,7 @@ export const FeedView = () => {
 
   // Same keys as the profile page, so Saved and Following stay in sync everywhere
   const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
+
   const following = useStoredSet("quill_following", [
     "elenarostova",
     "bethanytorres",
@@ -104,6 +114,7 @@ export const FeedView = () => {
   }, [tab, topic, searchQuery, bookmarks.items, following.items]);
 
   const page = visible.slice(0, shown);
+
   const hasMore = shown < visible.length;
 
   // Infinite scroll
@@ -130,11 +141,11 @@ export const FeedView = () => {
     setShown(PAGE_SIZE);
   };
 
-  // const changeTopic = (t: string) => {
-  //   setTopic(t);
-  //   setShown(PAGE_SIZE);
-  // };
-
+  const changeTopic = (t: string) => {
+    setTopic(t);
+    setShown(PAGE_SIZE);
+  };
+  
   const changeSearch = (v: string) => {
     setSearchQuery(v);
     setShown(PAGE_SIZE);
@@ -325,7 +336,7 @@ export const FeedView = () => {
             <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3">
               Explore topics
             </h3>
-            {/* <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               {TOPICS.slice(1).map((t) => (
                 <button
                   key={t}
@@ -339,7 +350,7 @@ export const FeedView = () => {
                   {t}
                 </button>
               ))}
-            </div> */}
+            </div>
           </section>
 
           <section>
