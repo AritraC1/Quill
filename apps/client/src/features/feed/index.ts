@@ -1,1 +1,1 @@
-export * from "./components/FeedView";
+export * from "./page/FeedPage";

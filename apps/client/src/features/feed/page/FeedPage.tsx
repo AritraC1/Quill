@@ -11,6 +11,8 @@ import {
 } from "../../../data/mockProfiles";
 import { STORIES, DEFAULT_SAVED } from "../../../data/stories";
 import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
+import Empty from "../components/Empty";
+import FollowButton from "../components/FollowButton";
 
 const PAGE_SIZE = 5;
 
@@ -31,35 +33,7 @@ const TABS = [
 
 type Tab = (typeof TABS)[number]["id"];
 
-const Empty = ({ title, body }: { title: string; body: string }) => (
-  <div className="py-16 text-center">
-    <p className="font-editorial text-[20px] text-[#1B1F1C]">{title}</p>
-    <p className="mt-2 text-[14px] text-[#5C625E] max-w-sm mx-auto">{body}</p>
-  </div>
-);
-
-const FollowButton = ({
-  following,
-  onClick,
-}: {
-  following: boolean;
-  onClick: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    aria-pressed={following}
-    className={`h-7 shrink-0 rounded-full px-3 text-[12px] font-medium border transition-colors ${
-      following
-        ? "border-transparent bg-[#EAE6DD] text-[#5C625E] hover:bg-[#DFDBD2]"
-        : "border-[#E6E2D8] text-[#1F3D2F] hover:border-[#1F3D2F]"
-    }`}
-  >
-    {following ? "Following" : "Follow"}
-  </button>
-);
-
-export const FeedView = () => {
+const FeedPage = () => {
   const [tab, setTab] = useState<Tab>("for-you");
   const [topic, setTopic] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -69,7 +43,6 @@ export const FeedView = () => {
 
   const own = useOwnProfile();
 
-  // Same keys as the profile page, so Saved and Following stay in sync everywhere
   const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
 
   const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
@@ -77,9 +50,11 @@ export const FeedView = () => {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+
   const loadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -87,6 +62,7 @@ export const FeedView = () => {
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2000);
   }, []);
+
   useEffect(
     () => () => {
       clearTimeout(toastTimer.current);
@@ -402,4 +378,4 @@ export const FeedView = () => {
   );
 };
 
-export default FeedView;
+export default FeedPage;
