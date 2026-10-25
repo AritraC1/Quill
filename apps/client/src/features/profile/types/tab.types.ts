@@ -1,0 +1,1 @@
+export type Tab = "stories" | "drafts" | "saved" | "about";

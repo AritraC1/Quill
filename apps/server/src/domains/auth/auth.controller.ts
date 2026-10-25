@@ -101,10 +101,6 @@ class AuthController {
     try {
       const userId = req.user?.userId;
 
-      if (!userId) {
-        throw new BadRequestError("User ID is required");
-      }
-
       const result = await this.authService.logout(userId as string);
 
       res.status(200).json({

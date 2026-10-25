@@ -3,11 +3,12 @@ import { createBrowserRouter } from "react-router-dom";
 import LandingPage from "../pages/LandingPage";
 import StatusPage from "../pages/StatusPage";
 import NotFoundPage from "../pages/NotFoundPage";
-import ProfilePage from "../pages/ProfilePage";
+import ProfilePage from "../features/profile/page/ProfilePage";
 import { OnboardingView } from "../features/auth";
 import { FeedView } from "../features/feed";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicOnlyRoute } from "./PublicOnlyRoute";
+import EditProfilePage from "../features/profile/page/EditProfilePage";
 
 const Router = createBrowserRouter([
   {
@@ -30,6 +31,7 @@ const Router = createBrowserRouter([
           { path: "onboarding", element: <OnboardingView /> },
           { path: "feed", element: <FeedView /> },
           { path: "profile", element: <ProfilePage /> },
+          { path: "profile/edit", element: <EditProfilePage /> },
           { path: "u/:handle", element: <ProfilePage /> },
         ],
       },

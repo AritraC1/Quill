@@ -1,4 +1,8 @@
-import type { OnboardRequestDTO, SignUpRequestDTO } from "@quill/shared";
+import type {
+  EditProfileDTO,
+  OnboardRequestDTO,
+  SignUpRequestDTO,
+} from "@quill/shared";
 import { pool } from "../../core/database/db";
 import type { UserModel } from "./user.model";
 
@@ -57,8 +61,56 @@ class UserRepository {
       data.avatar ?? null,
       data.bio ?? null,
     ]);
+
     return result.rows[0] ?? null;
   }
+
+  // generate account handle
+  async generateAccountHandle(
+    userId: string,
+    handle: string,
+  ): Promise<UserModel | null> {
+    const query = `
+      UPDATE users
+      SET handle = COALESCE(handle, $2)
+      WHERE id = $1
+      RETURNING *;
+    `;
+
+    const result = await pool.query<UserModel>(query, [userId, handle]);
+    return result.rows[0] ?? null;
+  }
+
+  // Edit User Profile
+  async editUserProfile(
+    userId: string,
+    data: EditProfileDTO,
+  ): Promise<UserModel | null> {
+    const query = `
+    UPDATE users
+    SET
+      avatar = COALESCE($2, avatar),
+      bio = COALESCE($3, bio),
+      fav_genre = COALESCE($4, fav_genre),
+      handle = COALESCE($5, handle),
+      website = COALESCE($6, website)
+    WHERE id = $1
+    RETURNING *;
+  `;
+
+    const result = await pool.query<UserModel>(query, [
+      userId,
+      data.avatar ?? null,
+      data.bio ?? null,
+      data.favGenre ?? null,
+      data.handle ?? null,
+      data.website ?? null,
+    ]);
+
+    return result.rows[0] ?? null;
+  }
+
+  // Delete a user
 }
 
 export default UserRepository;

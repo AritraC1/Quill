@@ -1,7 +1,8 @@
-import type { Story } from "../components/ui/story.types";
+import type { Story } from "../features/profile/types/story.types";
 
 export const CURRENT_USER_HANDLE = "julianvance"; // TODO: use useAuth().user.handle
 export const DEFAULT_SAVED = ["f1", "f2"]; // used only until the user saves something
+export const DEFAULT_FOLLOWING = ["bethanytorres", "elenarostova"];
 
 export interface Author {
   name: string;
@@ -9,6 +10,8 @@ export interface Author {
   bio: string;
   followers: number;
   following: number;
+  website?: string;
+  avatarUrl?: string;
   topics: string[];
   color: string;
   joined: string;

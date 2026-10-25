@@ -109,7 +109,6 @@ class AuthService {
     }
 
     // Verify OTP (allow test OTP 0000 or compare with stored hash)
-    // const isVerified = await bcrypt.compare(data.otp, activeOtp.code_hash);
     const isVerified =
       data.otp === "0000" ||
       (await bcrypt.compare(data.otp, activeOtp.code_hash));
@@ -119,6 +118,11 @@ class AuthService {
 
     // Consume OTP
     await this.otpRepo.revokeById(activeOtp.id);
+
+    // Generate a handle once, on the user's first successful login
+    if (!user.handle) {
+      await this.generateAccountHandle(user);
+    }
 
     // Generate Access Token
     const accessToken = await this.tokenService.generateAccessToken(user.id);
@@ -132,6 +136,40 @@ class AuthService {
       refreshToken,
       onboardingCompleted: Boolean(user.onboarding_completed),
     };
+  }
+
+  private async generateAccountHandle(user: UserModel): Promise<void> {
+    const namePart =
+      user.name
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "") || "user";
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const handle = `${namePart}${crypto.randomInt(100_000, 1_000_000)}`;
+
+      try {
+        const updatedUser = await this.userRepo.generateAccountHandle(
+          user.id,
+          handle,
+        );
+        if (!updatedUser) {
+          throw new BadRequestError("User does not exist");
+        }
+        return;
+      } catch (error) {
+        const isUniqueViolation =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "23505";
+
+        if (!isUniqueViolation || attempt === 4) {
+          throw error;
+        }
+      }
+    }
   }
 
   // Revoke all OTPs for a user

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Bookmark, MoreHorizontal, Bell } from "lucide-react";
-import type { Story } from "./story.types";
+import type { Story } from "../../features/profile/types/story.types";
 
 interface StoryCardProps {
   story: Story;
@@ -20,10 +20,10 @@ export const StoryCard: React.FC<StoryCardProps> = ({
     e.stopPropagation();
     const nextState = !bookmarked;
     setBookmarked(nextState);
-    if (nextState) {
-      setToastMessage("Saved to reading list");
-      setTimeout(() => setToastMessage(null), 2500);
-    }
+    // if (nextState) {
+    //   setToastMessage("Saved to reading list");
+    //   setTimeout(() => setToastMessage(null), 2500);
+    // }
     onBookmarkToggle?.(story.id, nextState);
   };
 

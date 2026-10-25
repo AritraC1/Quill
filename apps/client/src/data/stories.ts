@@ -1,4 +1,4 @@
-import type { Story } from "../components/ui/story.types";
+import type { Story } from "../features/profile/types/story.types";
 import { AUTHORS } from "./mockProfiles";
 
 export type FeedStory = Story & { age: number }; // age = days old, used for "Latest"

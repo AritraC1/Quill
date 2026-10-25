@@ -1,3 +1,5 @@
+// -------------- AUTH -------------- //
+
 export interface SignUpRequestDTO {
   name: string;
   email: string;
@@ -22,9 +24,34 @@ export interface RefreshTokenDTO {
   refreshToken: string;
 }
 
-// Onboarding
+// -------------- USER -------------- //
+
+// Onboarding a new user
 export interface OnboardRequestDTO {
   avatar?: string;
   bio?: string;
   favGenre: string[];
+}
+
+// Edit profile
+export interface EditProfileDTO {
+  avatar?: string;
+  bio?: string;
+  favGenre: string[];
+  handle?: string;
+  website?: string;
+}
+
+// -------------- BLOG -------------- //
+
+export interface CreateBlogDTO {
+  title: string;
+  description: string;
+  images?: string[];
+}
+
+export interface UpdateBlogDTO {
+  title: string;
+  description: string;
+  images?: string[];
 }

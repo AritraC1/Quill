@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, Clock, Users, Loader2 } from "lucide-react";
+import { Sparkles, Users, Loader2 } from "lucide-react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { StoryCard } from "../../../components/ui/StoryCard";
 import { useStoredSet } from "../../../hooks/useStoredSet";
-import { AUTHORS, CURRENT_USER_HANDLE } from "../../../data/mockProfiles";
+import {
+  AUTHORS,
+  CURRENT_USER_HANDLE,
+  DEFAULT_FOLLOWING,
+} from "../../../data/mockProfiles";
 import { STORIES, DEFAULT_SAVED } from "../../../data/stories";
+import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
 
 const PAGE_SIZE = 5;
 
@@ -22,8 +27,8 @@ const TOPICS = [
 const TABS = [
   { id: "for-you", label: "For you", Icon: Sparkles },
   { id: "following", label: "Following", Icon: Users },
-  { id: "latest", label: "Latest", Icon: Clock },
 ] as const;
+
 type Tab = (typeof TABS)[number]["id"];
 
 const Empty = ({ title, body }: { title: string; body: string }) => (
@@ -62,13 +67,12 @@ export const FeedView = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  const own = useOwnProfile();
+
   // Same keys as the profile page, so Saved and Following stay in sync everywhere
   const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
 
-  const following = useStoredSet("quill_following", [
-    "elenarostova",
-    "bethanytorres",
-  ]);
+  const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -93,15 +97,27 @@ export const FeedView = () => {
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+
     let list = STORIES.map((s) => ({
       ...s,
       isBookmarked: bookmarks.items.includes(s.id),
+      author:
+        s.author.handle === `@${CURRENT_USER_HANDLE}`
+          ? {
+              ...s.author,
+              name: own.profile.name,
+              avatar: own.profile.avatarUrl ?? s.author.avatar,
+            }
+          : s.author,
     }));
+
     if (tab === "following")
       list = list.filter((s) =>
         following.items.includes(s.author.handle!.slice(1)),
       );
+
     if (topic !== "All") list = list.filter((s) => s.topic === topic);
+
     if (q) {
       list = list.filter((s) =>
         `${s.title} ${s.excerpt} ${s.author.name} ${s.topic}`
@@ -109,9 +125,16 @@ export const FeedView = () => {
           .includes(q),
       );
     }
-    if (tab === "latest") list = [...list].sort((a, b) => a.age - b.age);
     return list;
-  }, [tab, topic, searchQuery, bookmarks.items, following.items]);
+  }, [
+    tab,
+    topic,
+    searchQuery,
+    bookmarks.items,
+    following.items,
+    own.profile.name,
+    own.profile.avatarUrl,
+  ]);
 
   const page = visible.slice(0, shown);
 
@@ -145,7 +168,7 @@ export const FeedView = () => {
     setTopic(t);
     setShown(PAGE_SIZE);
   };
-  
+
   const changeSearch = (v: string) => {
     setSearchQuery(v);
     setShown(PAGE_SIZE);
