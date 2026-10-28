@@ -1,103 +1,85 @@
 # Quill — Architecture
 
-## 1. High-Level Overview
+This document describes the code that exists today. Product and infrastructure ideas that are not implemented are called out as future work rather than represented as running services.
 
-Quill is a monolithic-but-modular application: a single Express API and a single React client, organized internally by domain, backed by Postgres and Redis, with background work handled by BullMQ. A message broker is reserved for a future stage where services are split apart.
+## 1. System overview
 
+Quill is a Bun-workspace monorepo with a React single-page client and an Express API. The API currently implements account signup, email OTP authentication, session cookies, onboarding, and a user profile update endpoint. The reading experience is a client-side prototype backed by local mock data; there is no post/feed API yet.
+
+```text
+Browser
+  └── React 19 + Vite client
+       └── /api requests (httpOnly cookies)
+            └── Express 5 API
+                 ├── PostgreSQL 16 — users, OTPs, refresh-token hashes, blog scaffold
+                 └── Redis 7 — BullMQ email queue
+                      └── separate Bun worker — OTP email delivery via Resend
 ```
-Client (React) → Reverse Proxy (Caddy, HTTPS) → Express API
-                                                      │
-                            ┌─────────────────────────┼─────────────────────────┐
-                            ▼                          ▼                         ▼
-                        PostgreSQL                  Redis                Message broker
-                     (primary data)         (cache + BullMQ queue)         (future, pub/sub)
-                                                      │
-                                                      ▼
-                                              BullMQ workers
-                                             (background jobs)
-```
 
-All of the above runs inside Docker containers on a single VPS at current scale (see `System-Design.md` for sizing and scaling triggers).
+In the Docker Compose setup, Nginx serves the client on host port 80 and proxies `/api/` and `/docs/` to the server. PostgreSQL and Redis are on the Compose network; the server and worker are not published as host ports. This is a local/self-hosted Compose topology, not evidence of a configured production deployment.
 
-## 2. Components
+## 2. Repository and runtime components
 
 ### Client (`apps/client`)
-React + TypeScript + Tailwind, built with Vite. Structured by **feature domain**, not by file type:
 
-```
-apps/client/src/
-├── features/       → posts, comments, feed, follows, auth, profile, notifications
-├── pages/          → route-level compositions (LandingPage, HomePage, PostPage, etc.)
-├── components/     → shared, generic UI (Button, Modal, Avatar)
-├── lib/            → api client, query client, utils
-├── routes/         → router.tsx (path → page mapping), ProtectedRoute
-└── store/          → global state (auth, etc.)
-```
+React 19, TypeScript, React Router, Tailwind CSS v4, and Vite. Routes include the landing page, onboarding, feed, own profile, profile editing, and `/u/:handle`.
 
-Each feature folder owns its own components, hooks, and API calls — mirroring the server's domain split one-to-one, so `features/posts` on the client maps directly to `domains/posts` on the server.
+- Authentication operations call the server and use `credentials: "include"`; JavaScript does not read the auth cookies.
+- Feed stories, author profiles, following, and bookmarks are mock/client-side state. Search, topic filtering, and the two feed tabs operate over the local story collection.
+- Profile editing currently saves to browser `localStorage`; it does not call `PATCH /api/user/edit-profile`.
+- Onboarding attempts to save genres/avatar/bio to the API, but client code treats a failed API save as a warning and still completes locally.
 
-### Server (`apps/server`)
-Express + TypeScript, OOP, structured by domain:
+### API (`apps/server`)
 
-```
-apps/server/src/
-├── domains/        → auth, users, posts, comments, tags, follows, feed, notifications
-│   └── each domain: controller → service → repository → entity → routes
-├── jobs/           → BullMQ job definitions (email, image-resize, feed-recompute)
-├── core/           → database clients, error handling, config, logging
-├── routes/         → mounts all domain routes
-├── index.ts        → Express app entry point
-└── worker.ts       → BullMQ worker process entry point
-```
+Bun runs Express 5 with TypeScript. `src/index.ts` configures credentialed CORS, request logging, JSON parsing, cookie parsing, Swagger UI, `/api` routes, and centralized error handling. The routes are grouped into:
 
-Each domain is self-contained: **controller** (HTTP layer) → **service** (business logic, OOP classes) → **repository** (DB queries) → **entity** (domain model). Adding a feature means adding one folder, not touching five scattered ones.
+- `domains/auth`: signup, OTP request/verification, refresh, session, logout, and protected onboarding.
+- `domains/user`: protected profile update.
+- `domains/blog`: model/repository scaffold only; no controller/routes are mounted.
+
+The server uses controller/service/repository classes in these domains. PostgreSQL access is through `pg` and a connection pool. Redis is used by BullMQ for OTP email jobs; there is no Redis response cache or feed computation.
 
 ### Shared package (`packages/shared`)
-TypeScript interfaces used by both client and server (`Post`, `User`, `Comment`, etc.), linked via Bun workspaces (`workspace:*`) — no publishing, no version drift, edit once and both apps see it.
 
-### PostgreSQL
-Primary datastore — users, posts, comments, tags, follows, reading history.
+Exports TypeScript request/response DTOs shared by client and server. It is not a generated runtime validation or API client package.
 
-### Redis
-Two roles:
-- **Cache** — hot post pages, session data, computed "For You" feed results
-- **Queue backend** — BullMQ's underlying storage for jobs and their state
+### Email worker
 
-### BullMQ workers
-A separate process (`worker.ts`) from the API, so background work never blocks request handling and can scale/restart independently. Current jobs:
-- Transactional emails (welcome, password reset, comment notifications)
-- Image resizing/optimization on upload
-- Nightly recomputation of per-user tag affinity for the "For You" feed
+`src/worker.ts` starts a BullMQ worker for the `email` queue. The only implemented job is `send-otp`, which sends the verification code through Resend. Queue configuration specifies three attempts with exponential backoff; the worker handles up to ten jobs concurrently. There are no scheduled, digest, image-processing, or feed-recomputation jobs.
 
-### Message broker (future)
-Not active yet. Reserved for the point where Quill splits into independent services (e.g. `auth-service`, `post-service`, `notification-service`) that need to publish/subscribe to events rather than call each other directly.
+## 3. Implemented request flows
 
-## 3. Request Flow (example: viewing a post)
+### Signup and login
 
-1. Client requests `/posts/:slug`
-2. Reverse proxy forwards to Express API
-3. `posts.controller` receives the request, delegates to `posts.service`
-4. `posts.service` checks Redis cache first; on miss, queries Postgres via `posts.repository`
-5. Response cached in Redis with a short TTL, returned to client
-6. Async, non-blocking: a "record view" event enqueues a BullMQ job to update `reading_history` (used later by the feed recommendation job)
+1. The client posts a name and email to `POST /api/auth/sign-up`.
+2. The API creates a `users` row in PostgreSQL.
+3. The client requests an OTP; the API stores a bcrypt hash and enqueues the email job in Redis.
+4. The user verifies the OTP. The API consumes the active OTP, creates a unique handle on first login, and issues access and refresh JWTs as httpOnly cookies.
+5. On startup, the client checks `GET /api/auth/session`. Authenticated requests attach cookies; the client retries once after a 401 by calling the refresh endpoint.
 
-## 4. Feed Personalization Flow
+**Important development limitation:** OTP generation is currently hard-coded to `0000`, and verification accepts `0000` as a bypass. Do not treat this auth flow as production-ready until that behavior is removed and tested.
 
-1. User reads posts → `reading_history` table grows (`user_id`, `post_id`, `read_at`)
-2. Nightly BullMQ job recomputes each user's top tag affinities from their reading history
-3. Results stored in a `user_tag_affinity` table, and the computed "For You" feed is cached in Redis per user
-4. On new-user onboarding (no reading history yet), the genres picked during onboarding seed the initial affinity — solving the cold-start problem
-5. "Following" tab is a simpler direct query: posts from followed authors, no precomputation needed
+### Onboarding
 
-## 5. Deployment Architecture
+The protected `POST /api/auth/onboard` endpoint stores `fav_genre`, optional avatar and bio, and marks onboarding complete. The client requires at least one selected genre but does not block navigation when the API call fails, so local completion is not proof of server persistence.
 
-- Single Hostinger VPS running all services via Docker Compose (`docker-compose.prod.yml`)
-- Caddy as reverse proxy — auto HTTPS, serves the client's static build, proxies `/api` to Express
-- Cloudflare in front for CDN + DDoS protection
-- Images offloaded to object storage (S3/R2/B2) rather than local disk
-- Automated Postgres backups (pg_dump → off-site storage)
-- GitHub Actions for CI/CD — build, push, deploy on merge to main
+### Reading and profiles
 
-See `System-Design.md` for the reasoning behind these choices and when to scale beyond a single VPS.
+Feed, public/author profile, search, follow, like, bookmark, and profile-edit experiences are currently implemented as client-side demo behavior. No corresponding feed, post, or public-profile endpoints are mounted. The user profile update endpoint exists, but the client edit form is not wired to it and the endpoint currently references database columns absent from the migrations (see [API.md](./API.md)).
 
----
+## 4. Data and infrastructure
+
+The checked-in migrations create:
+
+- `users`: name, email, onboarding fields, and optional handle.
+- `login_otps`: OTP hashes, expiry and revocation timestamps.
+- `refresh_tokens`: hashes of refresh JWTs, expiry and revocation timestamps.
+- `blogs`: a minimal user-owned blog record with title, description and images.
+
+The blog repository is incomplete and is not exposed over HTTP. There are no migrations for posts, comments, tags, follows, reading history, likes, bookmarks, handle-change timestamps, or website fields.
+
+Docker Compose defines PostgreSQL, Redis, API, worker, and Nginx/client services. The client Nginx configuration provides SPA fallback and proxies `/api/` and `/docs/`. TLS termination, a public CDN, object storage, backups, CI/CD deployment, and production monitoring are not configured by the checked-in Compose file.
+
+## 5. Future architecture (not implemented)
+
+Posts and publishing, persistent follow/engagement data, server-backed feeds and search, image/object storage, recommendation jobs, cache usage, and production deployment controls remain future work. Keep these out of the description of current runtime behavior until they are implemented and verified.

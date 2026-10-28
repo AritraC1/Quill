@@ -1,8 +1,8 @@
 # Quill
 
-Quill is a minimal, Medium-flavoured blog publishing and reading platform — people sign up passwordlessly (email OTP), pick topics they care about, and get a quiet feed. Authors write, share posts, and manage their profile; discovery, engagement, and scale concerns are documented in `System-Design.md`.
+Quill is a minimal, Medium-flavoured blog publishing and reading platform — people sign up passwordlessly (email OTP), pick topics they care about, and get a quiet feed. Authors write, share posts, and manage their profile; discovery, engagement, and scale concerns are documented in [`docs/System-Design.md`](docs/System-Design.md).
 
-**Current status:** auth → onboarding → feed flows are complete and working end-to-end; the blog/post domain is scaffolded but not wired (see [PRD status](#documentation)).
+**Current status:** signup/OTP/session APIs and onboarding/profile endpoints exist, but OTP is hard-coded to `0000`. The feed and profile experience remains a client-side prototype using mock data and local storage; the blog scaffold is not wired to HTTP routes. See the [PRD](docs/PRD.md) for implementation status.
 
 ## Tech Stack
 
@@ -25,13 +25,13 @@ quill/
 │   └── server/     → Express + TS, controller/service/repository per domain [README](apps/server/README.md)
 ├── packages/
 │   └── shared/     → shared TypeScript DTO types                            [README](packages/shared/README.md)
-├── docs/
-│   └── API.md      → REST API reference
 ├── scripts/        → setup.sh, run.sh                                       [README](scripts/README.md)
 ├── docker-compose.yml
-├── PRD.md
-├── Architecture.md
-├── System-Design.md
+├── docs/
+│   ├── PRD.md
+│   ├── Architecture.md
+│   ├── System-Design.md
+│   └── API.md
 └── CHANGE-LOG.md
 ```
 
@@ -41,8 +41,8 @@ quill/
 
 - Passwordless auth — sign up, email OTP login, JWT access + rotating refresh tokens, logout
 - Auto-generated unique `@handle` on first login
-- Onboarding (genres + avatar + bio) persisted to Postgres
-- Profile editing UI (local, with validation, avatar crop)
+- Onboarding (genres + avatar + bio) can be persisted through the API; client continues locally if the API call fails
+- Profile editing UI (browser-local only; not connected to the profile API)
 - Token refresh with single-flight protection and automatic retry on 401
 
 **Scaffolded / in progress**
@@ -58,7 +58,6 @@ git clone https://github.com/AritraC1/quill.git
 cd quill
 cp .env.example .env          # fill in JWT_SECRET (32+ chars) and RESEND_API_KEY
 bun install                   # or: docker compose up --build
-bun run db:migrate            # optional — tables auto-apply on first postgres boot via docker-entrypoint-initdb.d
 bun run dev                   # client + server + worker
 ```
 
@@ -74,10 +73,10 @@ This starts:
 | Service    | Port | Description                         |
 |------------|------|-------------------------------------|
 | `client`   | 80   | Static SPA served via nginx         |
-| `server`   | 3000 | Express API (also at `/docs` Swagger UI) |
+| `server`   | 3000 (internal) | Express API (also at `/docs` Swagger UI; proxied by the client) |
 | `worker`   | —    | BullMQ background job processor     |
 | `postgres` | 5432 | Primary database                    |
-| `redis`    | 6379 | Cache + BullMQ queue backend        |
+| `redis`    | internal 6379 | BullMQ queue backend              |
 
 ## Scripts (from root)
 
@@ -94,9 +93,9 @@ bun run test           # run all tests (server has Bun tests)
 
 | Document | Contents |
 |---|---|
-| [`PRD.md`](PRD.md) | product requirements, scope, implementation status |
-| [`Architecture.md`](Architecture.md) | component breakdown, request flow, deployment |
-| [`System-Design.md`](System-Design.md) | scaling strategy, caching, recommendation system, infra sizing |
+| [`docs/PRD.md`](docs/PRD.md) | product requirements, scope, implementation status |
+| [`docs/Architecture.md`](docs/Architecture.md) | implemented components, request flows, deployment topology |
+| [`docs/System-Design.md`](docs/System-Design.md) | current infrastructure, data paths, and future operational work |
 | [`docs/API.md`](docs/API.md) | full REST API reference |
 | [`CHANGE-LOG.md`](CHANGE-LOG.md) | chronological change log |
 

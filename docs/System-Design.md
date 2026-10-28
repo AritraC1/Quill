@@ -1,95 +1,66 @@
 # Quill — System Design
 
-## 1. Scale Target
+This document separates implemented design from proposals. No throughput, user-capacity, or production-readiness target has been load-tested.
 
-Designed initially for **~5,000 registered users**, realistic blog traffic pattern (mostly reads, occasional writes, low-to-moderate concurrency — likely 50–200 concurrent users at peak rather than all 5,000 simultaneously).
+## 1. Current deployment topology
 
-## 2. Infrastructure Sizing
+The checked-in `docker-compose.yml` defines:
 
-| Resource | Spec | Reasoning |
+| Service | Current role | Exposure |
 |---|---|---|
-| VPS | 2–4 vCPU, 4–8 GB RAM | Handles Express + Postgres + Redis + BullMQ together at this scale |
-| Storage | 50–80 GB SSD | DB + logs; media offloaded to object storage, not local disk |
-| CDN | Cloudflare (free tier) | Caches static assets, absorbs spikes, adds DDoS protection |
-| Object storage | Cloudflare R2 / Backblaze B2 / S3 | Uploaded images — avoids VPS disk/bandwidth pressure |
+| `client` | Nginx serves the Vite SPA and proxies `/api/` and `/docs/` | Host port 80 |
+| `server` | Express API | Internal Compose network, container port 3000 |
+| `worker` | BullMQ OTP email processor | Internal Compose network |
+| `postgres` | PostgreSQL 16 persistent application data | Internal network and host port 5432 |
+| `redis` | Redis 7 queue backend | Internal Compose network |
 
-**Deliberately not used at this scale:** Kubernetes, multiple app servers, load balancer, managed database service. All are premature at 5,000 users and add operational overhead with no measurable benefit yet.
+This configuration is suitable as a Compose-based development/self-hosting starting point. It does not configure HTTPS, a reverse-proxy certificate flow, CDN, object storage, automated backups, deployment automation, or production observability. The sample Compose defaults for database credentials are development conveniences; deployers must set strong secrets and restrict database access.
 
-## 3. Scaling Triggers (when to revisit)
+## 2. Data and request paths
 
-| Signal | Action |
-|---|---|
-| CPU/RAM consistently >70% | Vertical scale the VPS first (cheapest) |
-| Concurrent users in the thousands | Separate DB onto its own VPS; add load balancer + 2+ app servers |
-| Read-heavy pages straining Postgres | Add a read replica; lean harder on Redis caching |
-| Media/bandwidth costs rising | CDN + object storage becomes non-negotiable (should already be in place by default) |
-| Multiple independently-scaling services needed | Split into microservices; introduce message broker for pub/sub; consider Kubernetes only once there are several real services to orchestrate |
+PostgreSQL is the source of truth for users, OTP records, refresh-token hashes, and the initial `blogs` table. Migrations do not currently define posts, comments, tags, follows, reading history, likes, bookmarks, or recommendation data.
 
-## 4. Caching Strategy
+Redis is currently used as BullMQ's backing store for email delivery. The code does not currently cache API responses or feed results.
 
-- **Redis** caches:
-  - Hot post pages (short TTL, invalidated on edit)
-  - Session/auth tokens
-  - Precomputed "For You" feed results per user
-- **CDN (Cloudflare)** caches static assets (JS/CSS bundles, images) at the edge
-- Cache invalidation: on post edit/delete, explicitly bust the relevant Redis keys rather than relying purely on TTL expiry
+The auth request path is:
 
-## 5. Background Jobs (BullMQ)
+1. The client calls the Express API with credentials enabled.
+2. Express reads the access token from an httpOnly cookie (or a Bearer authorization header for programmatic clients).
+3. OTP and refresh-token state is persisted in PostgreSQL; OTP emails are enqueued to BullMQ in Redis and sent by the separate worker through Resend.
+4. The client restores auth state through the refresh cookie at `/api/auth/session` and rotates credentials after an authenticated request gets a 401.
 
-Run as a separate worker process from the API server (see `Architecture.md`), backed by Redis.
+### Auth and launch limitations
 
-| Job | Trigger | Notes |
+- OTP generation is hard-coded to `0000`; verification accepts that value as a bypass.
+- No auth or write-endpoint rate limiting is configured.
+- The access and refresh cookies are httpOnly and use `SameSite=Lax`; `Secure` is enabled in production. CORS allows the configured `CLIENT_URL` with credentials.
+- There is no CSRF token mechanism. Review deployment origins and cookie behavior before exposing state-changing endpoints to a production browser client.
+- Profile API SQL refers to `website` and profile logic refers to `handle_changed_at`, neither of which is added by the checked-in migrations. The current profile form uses local storage instead.
+
+## 3. Background processing
+
+The only queue job implemented today is OTP email delivery:
+
+| Job | Trigger | Behavior |
 |---|---|---|
-| Welcome email | User signup | Async, non-blocking |
-| Password reset email | User request | Includes retry on provider failure |
-| Comment notification | New comment on followed post | Batched if possible to avoid spam |
-| Image resize/optimize | Image upload | Runs before serving the final URL |
-| Feed tag-affinity recompute | Nightly, scheduled | Powers the "For You" tab |
-| Weekly digest email | Scheduled (repeatable job) | Top posts summary |
+| `send-otp` | OTP request | Resend delivery; three attempts with exponential backoff; worker concurrency 10 |
 
-All jobs get automatic retry with backoff on failure — this is one of BullMQ's core advantages over a hand-rolled queue.
+The codebase does not implement welcome-email enqueueing, password-reset email, comment notifications, image processing, recurring digest jobs, or feed/recommendation jobs.
 
-## 6. Personalized Feed — Recommendation Design
+## 4. Product features and proposed data design
 
-Two tabs, two different strategies:
+The current feed and profile screens are client-side prototypes over mock data. Topic filtering, text search, “For you”/“Following” tabs, bookmarks, and follows are not backed by server APIs. User-selected onboarding genres are stored in the `users` table when the onboarding API succeeds, but no feed uses them.
 
-**"Authors I Follow"**
-- Direct query: `SELECT * FROM posts WHERE author_id IN (followed authors) ORDER BY created_at DESC`
-- No precomputation needed; cache per-user in Redis if it becomes a hot path
+When server-backed reading features are implemented, the schema and endpoints should be designed around concrete requirements for publishing, visibility, pagination, comments, follows, and engagement. A personalized feed could initially rank published posts using onboarding topics and later reading signals, but no affinity tables, ranking job, or feed cache currently exists. Treat collaborative filtering and precomputed recommendations as future options, not current architecture.
 
-**"For You"**
-- **Cold start:** genres selected during onboarding seed initial tag affinity
-- **Level 1 (current):** tag/category affinity — derive a user's top tags from `reading_history`, recommend unread posts matching those tags, ranked by recency/popularity
-- **Level 2 (future):** collaborative filtering — "users who read what you read also read X," computed via co-occurrence counts
-- **Level 3 (future):** weighted scoring combining tag match + recency + popularity + author proximity
-- Computation happens in a nightly BullMQ job, not on-request, to keep feed loads fast; results cached in Redis
+## 5. Scaling and operational work (future)
 
-## 7. Data Model (core entities)
+There are no measured capacity figures or configured scale triggers in the repository. Before selecting production sizing or scaling thresholds:
 
-- `users` — id, email, password_hash, display_name, role, profile_complete
-- `posts` — id, title, slug, content, author_id, status (draft/published), published_at
-- `comments` — id, post_id, author_id, parent_comment_id (nullable, for threading), content
-- `tags` — id, name
-- `post_tags` — many-to-many join
-- `follows` — follower_id, followed_id
-- `reading_history` — user_id, post_id, read_at, time_spent
-- `user_tag_affinity` — user_id, tag_id, affinity_score (recomputed nightly)
-- `likes`, `bookmarks` — user_id, post_id (or comment_id)
+1. Define expected traffic and service-level objectives.
+2. Add metrics for API latency/errors, database pool saturation, queue age/failures, and resource use.
+3. Load-test actual API and database paths, then size the deployment from observed results.
+4. Add and test backup/restore procedures, secret management, HTTPS, and alerting.
+5. Scale components independently only when measurements identify a bottleneck.
 
-## 8. Security Considerations
-
-- Password hashing via bcrypt/argon2
-- JWT-based auth with short-lived access tokens + refresh tokens
-- Role-based access control (admin/editor/reader) enforced at the middleware layer
-- Input validation and sanitization on all write endpoints (XSS prevention on comments/posts)
-- Rate limiting on auth endpoints (login attempts) and comment posting (spam prevention)
-- Postgres/Redis never exposed publicly — only reachable on the internal Docker network; only the reverse proxy is internet-facing
-
-## 9. Observability
-
-- `docker compose logs` / `docker stats` initially
-- Log rotation configured to avoid disk exhaustion on the VPS
-- Bull Board (or similar) for inspecting BullMQ queue health and failed jobs
-- Basic uptime/health check endpoint (`/health`) polled externally (e.g. UptimeRobot)
-
----
+Kubernetes, separate database hosts, read replicas, a CDN, object storage, and microservice decomposition are not configured and should be evaluated only against verified operational needs.

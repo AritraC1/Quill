@@ -1,293 +1,226 @@
 # Quill — API Reference
 
-Full REST API reference for the Quill backend (`apps/server`).
+This reference describes routes mounted by `apps/server` and important implementation gaps.
 
 - **Runtime:** Bun + Express 5
-- **Base URL (dev):** `http://localhost:3000/api`
-- **Base URL (prod, via nginx proxy):** `https://<your-host>/api`
-- **Interactive docs (Swagger UI):** `http://localhost:3000/docs` — currently mostly empty; JSDoc/OpenAPI annotations have not been added to the route files yet. This document is the source of truth until then.
-
----
+- **Base URL (local server):** `http://localhost:3000/api`
+- **Base URL (through the Compose client):** `http://localhost/api`
+- **Swagger UI:** `http://localhost:3000/docs` locally, or `/docs/` through the Compose client. Route annotations are not yet present, so the generated spec does not document these endpoints.
 
 ## 1. Conventions
 
-### Response envelope
+Successful controller responses use:
 
-Every JSON endpoint returns one of two shapes:
+```json
+{ "success": true, "data": {} }
+```
 
-```jsonc
-// Success
-{ "success": true, "data": { ... } }
+Known application errors use:
 
-// Error — produced by the global error handler (core/errors/error.middleware.ts)
+```json
 { "success": false, "message": "Human readable reason" }
 ```
 
+Unexpected errors return status `500`; the message is masked as `Internal server error` in production and includes the underlying message in development. Express's default handling for unmatched routes is not guaranteed to use this JSON envelope.
+
 ### Authentication
 
-Auth is **cookie-based** — tokens never exist in JS-readable storage:
+Browser sessions use two httpOnly cookies; token strings are not returned in JSON:
 
-- The server issues **httpOnly cookies** on `verify-otp` / `refresh-token` (see `core/config/cookie.config.ts`):
-  - `quill_access_token` — JWT (HS256, 15 min default), path `/`, sent with every `/api` request
-  - `quill_refresh_token` — rotating JWT (7 day default), **path `/api/auth`** so it only rides on refresh/logout/session calls
-  - Both `HttpOnly` + `SameSite=Lax`; `Secure` is enabled in production
-- 🔒 endpoints accept the access token from the **cookie** (browser) or a legacy `Authorization: Bearer <accessToken>` header (API clients)
-- Rotation: every refresh revokes the used refresh token in `refresh_tokens` (stored as SHA-256 hash) and re-issues the cookie
-- Clients no longer receive token values in JSON responses — login/refresh bodies carry only `{ onboardingCompleted }`; boot-time session restore is `GET /auth/session`
-- CORS is credentialed (`credentials: true`) with the exact client origin — for credentialed requests the origin cannot be `*`
+| Cookie | Path | Default lifetime | Purpose |
+|---|---|---|---|
+| `quill_access_token` | `/` | 15 minutes | Access to protected API routes |
+| `quill_refresh_token` | `/api/auth` | 7 days | Session restore, refresh, and logout |
+
+Both use `SameSite=Lax`; `Secure` is enabled in production. Durations are configurable with `JWT_EXPIRES_IN` and `JWT_REFRESH_EXPIRES_IN`. The protected-route middleware also accepts `Authorization: Bearer <access-token>` for programmatic clients. The refresh endpoint and logout additionally accept a legacy `refreshToken` body field.
+
+The client sends `credentials: "include"`, and the server allows the configured `CLIENT_URL` with credentialed CORS. For a cross-origin development setup, the browser's cookie policy and client/server origins must be configured consistently.
 
 ### Status codes
 
-| Code | Meaning |
+| Code | Use |
 |---|---|
-| 200 | Success |
-| 201 | Resource created |
-| 400 | Validation failure / bad request |
-| 401 | Missing, invalid or expired token |
-| 409 | Conflict (e.g. email already registered) |
-| 500 | Unhandled server error (message masked as `Internal server error` in production) |
+| 200 | Successful request |
+| 201 | Account created or onboarding request accepted |
+| 400 | Missing/invalid request data or rejected state |
+| 401 | Missing, invalid, expired, or revoked authentication |
+| 409 | Account already exists |
+| 500 | Unexpected error, including database/configuration failures |
 
----
+There is no general request-schema validation middleware; the endpoint behavior below reflects the checks currently present in service code.
 
-## 2. Auth domain (`/auth`)
+## 2. Authentication (`/auth`)
 
-### 2.1 Sign up — `POST /auth/sign-up`
+### `POST /auth/sign-up`
 
-Creates a user account. Passwordless — login happens via emailed OTP.
+Creates an account. It does not sign the user in; request and verify an OTP separately.
 
-**Body**
+**Request**
 
-```jsonc
-{
-  "name": "Aritra Chatterjee",  // required, non-empty
-  "email": "me@example.com"     // required, unique
-}
+```json
+{ "name": "Aritra Chatterjee", "email": "me@example.com" }
 ```
 
-**Response `201`**
+**201 response**
 
-```jsonc
+```json
 {
   "success": true,
-  "data": {
-    "id": "d3f8…", "name": "Aritra Chatterjee", "email": "me@example.com"
-  }
+  "data": { "id": "uuid", "name": "Aritra Chatterjee", "email": "me@example.com" }
 }
 ```
 
-**Errors:** `400 Name and email are required` · `409 User already exists`
+**Errors:** `400` if name or email is missing; `409` if the email already exists.
 
----
+### `POST /auth/request-otp`
 
-### 2.2 Request OTP — `POST /auth/request-otp`
+Creates a 30-minute OTP record and queues an email job. Any previous active OTP for the user is revoked.
 
-Creates an OTP (hashed with bcrypt, 30 min expiry), revokes any previous active OTP for the user, and enqueues a delivery email via BullMQ.
+**Request:** `{ "email": "me@example.com" }`
 
-> ⚠️ **Dev note:** the OTP is hard-coded to `"0000"` in `auth.service.ts` and `"0000"` is also accepted as a universal bypass in `verify-otp`. This must be removed before production (see CHANGE-LOG).
+**200 response:** `{ "success": true, "data": { "success": true } }`
 
-**Body**
+**Errors:** `400` if email is missing or the account does not exist.
 
-```jsonc
-{ "email": "me@example.com" }
-```
+> **Critical development limitation:** `auth.service.ts` currently generates the literal code `0000`, and verification accepts `0000` as a bypass. Do not expose this behavior in production.
 
-**Response `200`**
+### `POST /auth/verify-otp`
 
-```jsonc
-{ "success": true, "data": { "success": true } }
-```
+Verifies the code, consumes the active OTP, generates a unique handle if the user has none, and sets both auth cookies.
 
-**Errors:** `400 Email is required` · `400 User does not exist`
+**Request:** `{ "email": "me@example.com", "otp": "0000" }`
 
----
+**200 response** (cookies set; token values are not in the body):
 
-### 2.3 Verify OTP / Login — `POST /auth/verify-otp`
-
-Consumes the active OTP and establishes a session by **setting both httpOnly cookies** (`quill_access_token`, `quill_refresh_token`). On the user's first successful login a unique `@handle` is generated from their name (5 retries, unique-violation aware). No token values appear in the response body.
-
-**Body**
-
-```jsonc
-{ "email": "me@example.com", "otp": "482913" }  // or "0000" (dev bypass)
-```
-
-**Response `200`** — sets the auth cookies; body carries session metadata only:
-
-```jsonc
+```json
 { "success": true, "data": { "onboardingCompleted": false } }
 ```
 
-**Errors:** `400 Email and OTP are required` · `400 User does not exist` · `400 No active OTP found for this email` · `400 Invalid OTP`
+**Errors:** `400` for missing email/OTP, unknown user, no active OTP, or invalid OTP. An active OTP record must exist even when the bypass value is used.
 
----
+### `POST /auth/refresh-token`
 
-### 2.4 Refresh token — `POST /auth/refresh-token`
+Reads the refresh cookie (preferred) or legacy body value, verifies and revokes the old refresh token, then sets a new cookie pair.
 
-Rotates the token pair. The presented refresh token (read from the `quill_refresh_token` **cookie**, or a legacy `{ "refreshToken": "…" }` body field) must exist, be unrevoked and unexpired in `refresh_tokens`; it is revoked immediately after use and the new pair is set as cookies.
+**Legacy request body:** `{ "refreshToken": "..." }`. Browser clients normally send `{}` with the cookie attached.
 
-**Response `200`**
+**200 response:** `{ "success": true, "data": { "success": true } }`
 
-```jsonc
-{ "success": true, "data": { "success": true } }
-```
+**Errors:** `400` if no refresh token is supplied; `401` if token verification fails, the token is expired, or it is not an active stored token.
 
-**Errors:** `400 Refresh token is required` · `401 Refresh token required` · `401 Refresh token is invalid or revoked`
+### `GET /auth/session`
 
----
+Verifies the refresh cookie without rotating it, looks up the user, and returns session state for client startup.
 
-### 2.5 Session — `GET /auth/session`
+**200 response:**
 
-Boot-time state restore for browser clients: verifies the refresh cookie (non-rotating) and reports who is logged in. Lets route guards know the `onboardingCompleted` state **without any token values leaking to JS**.
-
-**Response `200`**
-
-```jsonc
+```json
 { "success": true, "data": { "authenticated": true, "onboardingCompleted": false } }
 ```
 
-**Errors:** `401 Not authenticated` (no/invalid/expired refresh cookie)
+**Errors:** `401` if there is no valid refresh cookie or the user no longer exists.
 
----
+### `DELETE /auth/logout`
 
-### 2.6 Logout — `DELETE /auth/logout`
+Accepts the refresh cookie or a legacy `{ "refreshToken": "..." }` body, revokes all refresh tokens for that user, and clears both cookies. This signs the user out of all sessions, not only the current browser.
 
-Identifies the user from the refresh cookie (revoking **all** their active refresh tokens — sign-out-everywhere semantics) and **clears both auth cookies**.
+**200 response:** `{ "success": true, "data": { "success": true } }`
 
-**Response `200`**
+**Errors:** `401` if there is no active session or the token cannot be verified.
 
-```jsonc
-{ "success": true, "data": { "success": true } }
-```
+### `POST /auth/onboard` — authenticated
 
-**Errors:** `401 No active session` · `401 invalid/expired refresh token`
----
+Persists genres, optional avatar and bio, and marks onboarding complete. This endpoint rejects a repeat onboarding request.
 
-### 2.7 Complete onboarding 🔒 — `POST /auth/onboard`
+**Request**
 
-Sets favourite genres, optional avatar/bio, and flips `onboarding_completed` to `true`. Idempotence-wise: a user who already completed onboarding gets `400`.
-
-**Body**
-
-```jsonc
+```json
 {
-  "favGenre": ["essays", "design"],  // required, ≥1 item
-  "avatar": "data:image/jpeg;base64,…",  // optional
-  "bio": "One-liner about you"           // optional
+  "favGenre": ["essays", "design"],
+  "avatar": "data:image/jpeg;base64,...",
+  "bio": "A short introduction"
 }
 ```
 
-**Response `201`**
+At least one `favGenre` item is required; `avatar` and `bio` are optional.
 
-```jsonc
-{ "success": true, "data": { "success": true } }
-```
+**201 response:** `{ "success": true, "data": { "success": true } }`
 
-**Errors:** `400 At least one genre is required` · `400 User not found` · `400 Onboarding has already been completed`
+**Errors:** `400` if no genre is supplied, the user is missing, or onboarding is already complete; `401` if not authenticated.
 
----
+> The client currently logs an onboarding API failure and still writes local onboarding data and navigates to the feed. A successful UI transition therefore does not guarantee this endpoint succeeded.
 
-## 3. User domain (`/user`)
+## 3. User (`/user`)
 
-### 3.1 Edit profile 🔒 — `PATCH /user/edit-profile`
+### `PATCH /user/edit-profile` — authenticated
 
-Partial update — every field is optional (`COALESCE`-based update repels `null`s).
+The server accepts `avatar`, `bio`, `favGenre`, `handle`, and `website`, and returns the updated database row on success. The endpoint does not update `name`.
 
-**Body**
+**Intended request shape**
 
-```jsonc
+```json
 {
-  "avatar": "data:image/…",   // optional
-  "bio": "…",                 // optional
-  "favGenre": ["essays"],     // optional
-  "handle": "aritra42",       // optional — max once per 6 months
-  "website": "https://me.dev" // optional
+  "avatar": "data:image/jpeg;base64,...",
+  "bio": "A short introduction",
+  "favGenre": ["essays"],
+  "handle": "aritra42",
+  "website": "https://example.com"
 }
 ```
 
-**Response `200`** — the full updated user row:
+Fields are applied with `COALESCE`, so omitted or `null` values leave stored values unchanged. The TypeScript DTO marks `favGenre` as required, though the repository can accept an omitted value at runtime.
 
-```jsonc
-{
-  "success": true,
-  "data": {
-    "id": "…", "name": "…", "email": "…", "handle": "…",
-    "avatar": "…", "bio": "…", "fav_genre": ["essays"],
-    "onboarding_completed": true,
-    "created_at": "2026-09-26T…", "updated_at": "2026-10-28T…"
-  }
-}
-```
+**Current blocker:** the SQL query references `users.website`, which is not created by any checked-in migration, so the update currently fails at the database. The handle-change service also references `users.handle_changed_at`, which is not migrated; the six-month policy is therefore not enforced by the current schema. The client edit form does not call this endpoint and stores edits in `localStorage`.
 
-**Errors:** `401` · `400 User not found` · `400 You can change your handle only once every 6 months` · `400 Failed to update user profile`
+## 4. Blog scaffold — no HTTP endpoints
 
-> ⚠️ Known gap: `handle` and `website` are accepted by the API but `handle_changed_at`/`website` columns are not created by any migration — the update will fail at the DB level until a migration is added.
+`blogs` is the only content-related table created by the migrations. It has `id`, `user_id`, `title`, `blog_description`, `images`, `created_at`, and `updated_at`.
 
----
+The blog repository has partial lookup/create methods. Its update SQL is incomplete, and delete/list/count methods are absent. Blog service/controller/routes are not implemented or mounted. There are no post, feed, comment, tag, follow, like, bookmark, or public-profile API routes.
 
-## 4. Blog domain (`/blog`) — ⚠️ NOT IMPLEMENTED
+## 5. System and documentation routes
 
-`apps/server/src/domains/blog/` exists as a scaffold:
-
-| File | State |
-|---|---|
-| `blog.model.ts` | ✅ entity defined (`id, userId, title, description, images, created_at, updated_at`) |
-| `blog.repository.ts` | ⚠️ partial: `findBlogById`, `findBlogByTitle`, `createNewBlog` implemented; `updateBlog` has a **broken SQL string** (missing `SET`, wrong arity — 4 placeholders, 1 supplied); delete/list/count are stubs |
-| `blog.service.ts`, `blog.controller.ts`, `blog.routes.ts` | ❌ empty files — domain is **not mounted** in `routes.ts` |
-
-Planned endpoints (from the PRD): `POST /blogs`, `GET /blogs/:id`, `PATCH /blogs/:id`, `DELETE /blogs/:id`, `GET /users/:handle/blogs`.
-
----
-
-## 5. System endpoints
-
-| Endpoint | Method | Description |
+| Path | Method | Description |
 |---|---|---|
-| `/docs` | GET | Swagger UI (served from JSDoc annotations; currently empty spec) |
-| `/health` | — | **Not implemented** — recommended addition (see System-Design.md §9) |
+| `/docs` | GET | Swagger UI; route files currently have no endpoint annotations |
+| `/health` | — | Not implemented |
 
-Unknown `/api/*` paths return `404` from Express' default handler.
+The API router is mounted at `/api`; only `/auth/*` and `/user/edit-profile` are currently mounted.
 
----
+## 6. Background email job
 
-## 6. Background jobs
+The API enqueues `send-otp` jobs on the BullMQ queue named `email`. `apps/server/src/worker.ts` starts a worker with concurrency 10.
 
-Email delivery runs on the BullMQ `email` queue, processed by a separate worker process (`apps/server/src/worker.ts`, concurrency 10).
-
-| Job name | Payload | Config |
+| Job | Payload | Retry behavior |
 |---|---|---|
-| `send-otp` | `{ type: "otp", to: string, code: string }` | 3 attempts, exponential backoff, 5 s initial delay |
+| `send-otp` | `{ "type": "otp", "to": "email", "code": "0000" }` | 3 attempts with exponential backoff, initial delay 5 seconds |
 
-Email content: `otp.template.ts` (verification code), `welcome.template.ts` (sent on account creation — currently **never queued**, an integration gap).
+The worker sends OTP email through Resend. No other job types are implemented.
 
----
+## 7. Database tables
 
-## 7. Data model reference
-
-Active tables (see `apps/server/src/core/database/migrations/`):
-
-| Table | Key columns | Notes |
+| Table | Columns/role | Migration |
 |---|---|---|
-| `users` | id UUID, name, email UNIQUE, fav_genre TEXT[], avatar, bio, onboarding_completed, handle UNIQUE (partial idx) | passwordless |
-| `login_otps` | user_id FK, code_hash, expires_at, revoked_at | one active OTP per user (partial unique index) |
-| `refresh_tokens` | user_id FK, token_hash, expires_at, revoked_at | SHA-256 of the JWT |
-| `blogs` | user_id FK, title, blog_description, images TEXT[] | created; API not wired yet |
+| `users` | `id`, `name`, `email`, `created_at`, `updated_at` | `001_create_users.sql` |
+| `login_otps` | `user_id`, `code_hash`, `expires_at`, `revoked_at`, timestamps | `002_create_login_otps.sql` |
+| `refresh_tokens` | `user_id`, SHA-256 token hash, `expires_at`, `revoked_at`, timestamps | `003_create_refresh_tokens.sql` |
+| `users` onboarding fields | `fav_genre`, `avatar`, `bio`, `onboarding_completed` | `004_add_user_onboarding_fields.sql` |
+| `users.handle` | Optional unique handle | `005_add_user_handle.sql` |
+| `blogs` | `user_id`, title, description, images, timestamps | `006_create_blogs.sql` |
 
-Missing columns referenced in code: `users.handle_changed_at`, `users.website`, `blogs` access via `BlogModel.userId` vs camel/snake mapping inconsistencies.
+No migration currently creates `users.website` or `users.handle_changed_at`.
 
----
+## 8. Client API mapping
 
-## 8. Client mapping
-
-The React client (`apps/client`) never touches token values — it sends `credentials: "include"` and the server reads the httpOnly cookies. It restores session state via `GET /auth/session`.
-
-| Client function | Endpoint |
+| Client operation | Endpoint |
 |---|---|
 | `signUpApi` | `POST /auth/sign-up` |
 | `requestOtpApi` | `POST /auth/request-otp` |
-| `verifyOtpApi` | `POST /auth/verify-otp` (server sets cookie pair) |
-| `sessionApi` | `GET /auth/session` (single-flight boot check) |
-| `refreshTokenApi` | `POST /auth/refresh-token` (single-flight rotation) |
-| `logoutApi` | `DELETE /auth/logout` (revokes + clears cookies) |
-| `onboardApi` | `POST /auth/onboard` (via `fetchWithAuth`) |
-| `fetchWithAuth` | any 🔒 endpoint — retries once after refresh on 401 |
-| `edit-profile` | `PATCH /user/edit-profile` — **not integrated client-side yet** |
+| `verifyOtpApi` | `POST /auth/verify-otp` |
+| `sessionApi` | `GET /auth/session` |
+| `refreshTokenApi` | `POST /auth/refresh-token` |
+| `logoutApi` | `DELETE /auth/logout` |
+| `onboardApi` | `POST /auth/onboard` |
+| `fetchWithAuth` | Shared cookie-auth helper; retries once after a 401 by refreshing |
+
+The profile update UI has no API integration. No client calls exist for blog, post, feed, follow, comment, like, bookmark, or search APIs.
