@@ -6,6 +6,7 @@ export const API_ROUTES = {
     REQUEST_OTP: "/auth/request-otp",
     VERIFY_OTP: "/auth/verify-otp",
     REFRESH_TOKEN: "/auth/refresh-token",
+    SESSION: "/auth/session",
     LOGOUT: "/auth/logout",
   },
   ONBOARDING: {

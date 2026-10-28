@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { PenSquare, Search, Bell, Bookmark, Home, X } from "lucide-react";
 import { useAuth } from "../../features/auth";
+import { loadStoredUser } from "../../lib/user-store";
 
 interface AppShellProps {
   children: ReactNode;
@@ -35,7 +36,7 @@ export const AppShell = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Retrieve user onboarding / profile data
+  // Retrieve user onboarding / profile data + name captured at sign-up
   const userProfile = (() => {
     try {
       const saved = localStorage.getItem("quill_onboarding_profile");
@@ -44,6 +45,9 @@ export const AppShell = ({
       return null;
     }
   })();
+
+  const storedUser = loadStoredUser();
+  const avatarInitial = storedUser?.name?.trim()[0]?.toUpperCase() ?? "Q";
 
   const handleLogout = async () => {
     setDropdownOpen(false);
@@ -145,7 +149,7 @@ export const AppShell = ({
                   />
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-[#B27D56] text-white font-newsreader text-base font-normal flex items-center justify-center shadow-inner">
-                    J
+                    {avatarInitial}
                   </div>
                 )}
               </button>

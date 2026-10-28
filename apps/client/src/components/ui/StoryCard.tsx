@@ -13,7 +13,6 @@ export const StoryCard: React.FC<StoryCardProps> = ({
   onBookmarkToggle,
 }) => {
   const [bookmarked, setBookmarked] = useState(Boolean(story.isBookmarked));
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleBookmark = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -87,11 +86,6 @@ export const StoryCard: React.FC<StoryCardProps> = ({
   return (
     <article className="group relative py-7 border-b border-[#E6E2D8] last:border-b-0 cursor-pointer">
       {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-[#1F3D2F] px-4 py-2 text-xs font-medium text-white shadow-lg animate-fade-in pointer-events-none">
-          {toastMessage}
-        </div>
-      )}
 
       <div className="flex items-start justify-between gap-6 sm:gap-10">
         {/* Left Column: Title, Excerpt, Metadata Badges & Read info */}

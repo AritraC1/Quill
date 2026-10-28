@@ -14,14 +14,23 @@ export interface VerifyOtpDTO {
   otp: string;
 }
 
+/**
+ * Login is transport-layered now:
+ * - tokens are delivered as httpOnly cookies (never exposed to JS)
+ * - the JSON body only carries non-sensitive session metadata
+ */
 export interface AuthResponseDTO {
-  accessToken: string;
-  refreshToken: string;
+  onboardingCompleted: boolean;
+}
+
+/** Result of GET /auth/session — used by the client to restore/verify auth state on boot */
+export interface SessionResponseDTO {
+  authenticated: boolean;
   onboardingCompleted?: boolean;
 }
 
 export interface RefreshTokenDTO {
-  refreshToken: string;
+  refreshToken?: string; // optional — the httpOnly cookie is preferred
 }
 
 // -------------- USER -------------- //

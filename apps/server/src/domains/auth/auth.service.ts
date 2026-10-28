@@ -2,18 +2,24 @@ import bcrypt from "bcrypt";
 import crypto from "node:crypto";
 
 import type {
-  AuthResponseDTO,
   RefreshTokenDTO,
   RequestOtpDTO,
+  SessionResponseDTO,
   SignUpRequestDTO,
   VerifyOtpDTO,
 } from "@quill/shared";
-import { BadRequestError, ConflictError } from "../../core/errors";
+import { BadRequestError, ConflictError, UnauthorizedError } from "../../core/errors";
 import UserRepository from "../user/user.repository";
 import OtpRepository from "./otp.repository";
 import type { UserModel } from "../user/user.model";
 import { emailQueue } from "../../jobs/queue";
 import TokenService from "./token.service";
+
+/** Internal result of issuing a token pair — the controller turns this into httpOnly cookies */
+export interface LoginTokens {
+  accessToken: string;
+  refreshToken: string;
+}
 
 class AuthService {
   private userRepo: UserRepository;
@@ -90,7 +96,7 @@ class AuthService {
   }
 
   // Verify OTP for Login
-  async verifyOtp(data: VerifyOtpDTO): Promise<AuthResponseDTO> {
+  async verifyOtp(data: VerifyOtpDTO): Promise<LoginTokens & { onboardingCompleted: boolean }> {
     // validate data
     if (!data.email || !data.otp) {
       throw new BadRequestError("Email and OTP are required");
@@ -186,7 +192,7 @@ class AuthService {
   }
 
   // Refresh Token
-  async refreshToken(data: RefreshTokenDTO): Promise<AuthResponseDTO> {
+  async refreshToken(data: RefreshTokenDTO): Promise<LoginTokens> {
     // Validate data
     if (!data.refreshToken) {
       throw new BadRequestError("Refresh token is required");
@@ -216,17 +222,41 @@ class AuthService {
     };
   }
 
-  // Logout
-  async logout(userId: string): Promise<{ success: true }> {
-    // validate user id
-    if (!userId) {
-      throw new BadRequestError("User ID is required");
+  // Logout — identifies the user from the presented refresh token and
+  // revokes every active refresh token for them (sign-out-everywhere)
+  async logout(data: RefreshTokenDTO): Promise<{ success: true }> {
+    // must have a refresh token to know who is logging out
+    if (!data.refreshToken) {
+      throw new UnauthorizedError("No active session");
     }
 
+    // verify the presented token so we cannot be tricked into revoking arbitrary users
+    const payload = await this.tokenService.verifyRefreshToken(data.refreshToken);
+
     // revoke all refresh tokens for the user
-    await this.tokenService.revokeAllRefreshTokens(userId);
+    await this.tokenService.revokeAllRefreshTokens(payload.userId);
 
     return { success: true };
+  }
+
+  // Session — restores client state on boot from the httpOnly refresh cookie.
+  // Does NOT rotate the token; cheap verification only.
+  async session(data: RefreshTokenDTO): Promise<SessionResponseDTO> {
+    if (!data.refreshToken) {
+      throw new UnauthorizedError("Not authenticated");
+    }
+
+    const payload = await this.tokenService.verifyRefreshToken(data.refreshToken);
+
+    const user = await this.userRepo.findById(payload.userId);
+    if (!user) {
+      throw new UnauthorizedError("User no longer exists");
+    }
+
+    return {
+      authenticated: true,
+      onboardingCompleted: Boolean(user.onboarding_completed),
+    };
   }
 }
 

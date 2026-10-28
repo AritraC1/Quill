@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { AUTHORS, CURRENT_USER_HANDLE, type Author } from "../../../data/mockProfiles";
+import { loadStoredUser } from "../../../lib/user-store";
 
 const KEY = "quill_profile_overrides";
 
@@ -16,10 +17,20 @@ function read(): ProfileEdits {
   }
 }
 
+// The name captured at sign-up (see lib/user-store.ts) until a "get me" API exists
+function defaultProfile(): Author {
+  const base = { ...AUTHORS[CURRENT_USER_HANDLE] };
+  const user = loadStoredUser();
+  if (user?.name) {
+    base.name = user.name;
+  }
+  return base;
+}
+
 export function useOwnProfile() {
   const [edits, setEdits] = useState<ProfileEdits>(read);
 
-  const profile: Author = { ...AUTHORS[CURRENT_USER_HANDLE], ...edits };
+  const profile: Author = { ...defaultProfile(), ...edits };
 
   // Replaces the stored edits entirely, so removing the photo or website works
   const save = useCallback((next: ProfileEdits) => {

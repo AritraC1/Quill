@@ -2,7 +2,7 @@ import { useState, useRef, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Camera, Check, Sparkles, ArrowRight, Loader2, BookOpen, PenTool } from "lucide-react";
 import type { GenreOption } from "../types/onboarding.types";
-import { onboardApi, getStoredTokens } from "../../api/auth.api";
+import { onboardApi } from "../../api/auth.api";
 
 
 const GENRES: GenreOption[] = [
@@ -67,17 +67,15 @@ export const OnboardingView = () => {
     setError(null);
 
     try {
-      // Sync to backend if authenticated
-      const { accessToken, refreshToken } = getStoredTokens();
-      if (accessToken || refreshToken) {
-        await onboardApi({
-          avatar: avatarPreview || undefined,
-          bio: bio.trim() || undefined,
-          favGenre: selectedGenres,
-        }).catch((err) => {
-          console.warn("Backend onboarding sync warning:", err);
-        });
-      }
+      // Best-effort sync to the backend (cookies ride along automatically);
+      // failures are tolerated — local copy below still completes onboarding
+      await onboardApi({
+        avatar: avatarPreview || undefined,
+        bio: bio.trim() || undefined,
+        favGenre: selectedGenres,
+      }).catch((err) => {
+        console.warn("Backend onboarding sync warning:", err);
+      });
 
       // Persist onboarding profile data in client storage
       const onboardingData = {

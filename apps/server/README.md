@@ -1,158 +1,126 @@
-# Quill — Backend
+# Quill Server
 
-## Overview
+The Quill backend — an Express 5 + TypeScript REST API, OOP-styled and organised by **domain** (controller → service → repository → model), running on Bun with PostgreSQL, Redis, and BullMQ for background email jobs.
 
-Quill's backend is an Express + TypeScript API, structured with OOP principles and organized by **domain** rather than by technical layer. Each domain owns its full stack — controller, service, repository, and entity — making the codebase easy to extend one feature at a time.
+## Stack
 
-## Tech Stack
+| Concern | Choice |
+|---|---|
+| Runtime / package manager | Bun |
+| HTTP framework | Express 5 |
+| Language | TypeScript (strict, ESM) |
+| Database | PostgreSQL 16 via `pg` Pool |
+| Cache / queue | Redis 7 (ioredis) + BullMQ |
+| Auth | `jose` JWTs (HS256) — passwordless (emailed OTP), rotating refresh tokens stored hashed |
+| Validation | Zod (`core/config/env.ts` validates all env vars at boot) |
+| Logging | pino + pino-http (request logging with request-IDs) |
+| Email | Resend |
+| Docs | Swagger UI at `/docs` (spec scaffolded; route annotations pending — see [API reference](../../docs/API.md)) |
 
-- Express + TypeScript
-- PostgreSQL (primary datastore)
-- Redis (cache + BullMQ queue backend)
-- BullMQ (background job processing)
-- Bun (runtime + package manager)
-- Message broker (future — reserved for pub/sub once services are split apart)
+## Getting Started
 
-## Folder Structure
+```bash
+# from repo root
+bun install
+cp .env.example .env        # DATABASE_URL, REDIS_URL, JWT_SECRET (≥32 chars), RESEND_API_KEY
+bun run dev:server          # http://localhost:3000
+bun run dev:worker          # separate process, processes the BullMQ "email" queue
+```
+
+Docker Compose boots postgres + redis + server + worker together, and applies `src/core/database/migrations/*.sql` automatically on first postgres boot.
+
+## Scripts
+
+| Command | Description |
+|---|---|
+| `bun run dev` | API server with watch mode |
+| `bun run dev:worker` | BullMQ worker with watch mode |
+| `bun run test` (root) | Bun test runner (`auth.service.test.ts`) |
+
+## Structure
 
 ```
 apps/server/src/
+├── index.ts                  express app — cors, request logger, /docs, /api, error handler
+├── worker.ts                 BullMQ worker entry (separate process from the API)
+├── routes/routes.ts          mounts every domain router under /api
 ├── domains/
 │   ├── auth/
-│   │   ├── auth.controller.ts
-│   │   ├── auth.service.ts
-│   │   ├── auth.routes.ts
-│   │   ├── auth.middleware.ts      (JWT verify, role guard)
-│   │   └── auth.types.ts
-│   │
-│   ├── users/
-│   │   ├── user.controller.ts
-│   │   ├── user.service.ts
-│   │   ├── user.repository.ts
-│   │   ├── user.entity.ts
-│   │   ├── user.routes.ts
-│   │   └── user.types.ts
-│   │
-│   ├── posts/
-│   │   ├── post.controller.ts
-│   │   ├── post.service.ts
-│   │   ├── post.repository.ts
-│   │   ├── post.entity.ts
-│   │   ├── post.routes.ts
-│   │   └── post.types.ts
-│   │
-│   ├── comments/
-│   │   ├── comment.controller.ts
-│   │   ├── comment.service.ts
-│   │   ├── comment.repository.ts
-│   │   ├── comment.entity.ts
-│   │   └── comment.routes.ts
-│   │
-│   ├── tags/
-│   │   ├── tag.controller.ts
-│   │   ├── tag.service.ts
-│   │   ├── tag.repository.ts
-│   │   └── tag.routes.ts
-│   │
-│   ├── follows/
-│   │   ├── follow.controller.ts
-│   │   ├── follow.service.ts
-│   │   ├── follow.repository.ts
-│   │   └── follow.routes.ts
-│   │
-│   ├── feed/                        (Following + For You tabs)
-│   │   ├── feed.controller.ts
-│   │   ├── feed.service.ts          (recommendation logic)
-│   │   ├── feed.repository.ts
-│   │   └── feed.routes.ts
-│   │
-│   └── notifications/
-│       ├── notification.controller.ts
-│       ├── notification.service.ts
-│       └── notification.routes.ts
-│
-├── jobs/                             (BullMQ job definitions)
-│   ├── email.job.ts
-│   ├── image-resize.job.ts
-│   ├── feed-recompute.job.ts
-│   └── queues.ts                     (queue instances/registry)
-│
-├── core/                             (cross-cutting, not domain-specific)
-│   ├── database/
-│   │   ├── postgres.ts
-│   │   ├── redis.ts
-│   │   └── migrations/
-│   ├── errors/
-│   │   ├── app-error.ts
-│   │   └── error-handler.middleware.ts
-│   ├── config/
-│   │   └── env.ts
-│   └── logger/
-│       └── logger.ts
-│
-├── routes/
-│   └── index.ts                      (mounts all domain routes)
-│
-├── index.ts                          (Express app entry point)
-└── worker.ts                         (BullMQ worker process entry point)
+│   │   ├── auth.controller.ts     HTTP layer (try/catch → next(error))
+│   │   ├── auth.service.ts        sign-up, OTP issue/verify, handle generation, token rotation
+│   │   ├── auth.middleware.ts     requireAuth — verifies Bearer access token
+│   │   ├── auth.routes.ts         /sign-up, /request-otp, /verify-otp, /refresh-token, /logout, /onboard
+│   │   ├── auth.service.test.ts   Bun tests (validation, duplicate email, handle generation)
+│   │   ├── onboarding.controller.ts / onboarding.service.ts   genre/bio/avatar completion
+│   │   ├── token.service.ts       JWT sign/verify, refresh-token hash + DB lifecycle
+│   │   ├── token.repository.ts    refresh_tokens CRUD
+│   │   ├── otp.repository.ts      login_otps CRUD (issue, revoke, find-active)
+│   │   └── *.model.ts             OtpModel, RefreshTokenModel
+│   ├── user/
+│   │   ├── user.controller.ts     PATCH /user/edit-profile
+│   │   ├── user.service.ts        profile update rules (handle locked 6 months)
+│   │   ├── user.repository.ts     users table queries
+│   │   └── user.model.ts          UserModel
+│   └── blog/                      ⚠️ SCAFFOLD ONLY — service/controller/routes are empty;
+│                                     repository has partial queries (broken `updateBlog` SQL)
+├── jobs/
+│   ├── queue.ts                   emailQueue (BullMQ "email" queue)
+│   └── email.job.ts               Worker — sends OTP emails via Resend (concurrency 10, retry ×3)
+├── core/
+│   ├── config/                    env.ts (zod-validated), database.config.ts, redis.config.ts,
+│   │                              jwt.config.ts, swagger.config.ts
+│   ├── database/                  db.ts (pg Pool) + migrations/*.sql (001–006)
+│   ├── errors/                    AppError hierarchy (400/401/403/404/409/500) + global errorHandler
+│   ├── email/                     resend.client.ts, email.service.ts, templates/ (otp, welcome)
+│   └── logger/                    logger.ts (pino singleton), request-logger.middleware.ts
+└── types/express.d.ts             Request.user augmentation
 ```
 
-## Design Principles
+## API
 
-- **Domain-per-folder:** each domain is self-contained. Controller (HTTP layer) → Service (business logic, OOP classes) → Repository (DB queries) → Entity (domain model). Adding a feature means adding one new folder, not touching five scattered ones.
-- **Worker is a separate process from the API** (`worker.ts` vs `index.ts`) — background jobs never block request handling, and each can scale/restart independently.
-- **`core/`** holds nothing domain-specific — just infrastructure plumbing (DB clients, error handling, config, logging) shared across all domains.
+See **[docs/API.md](../../docs/API.md)** for the full endpoint reference. Summary:
 
-## Data Model (core entities)
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/sign-up` | — | create account |
+| POST | `/api/auth/request-otp` | — | email a login code (30 min validity) |
+| POST | `/api/auth/verify-otp` | — | consume OTP → **sets httpOnly auth cookies**; body = `{ onboardingCompleted }` |
+| POST | `/api/auth/refresh-token` | cookie | rotate cookie pair (old refresh token revoked) |
+| GET | `/api/auth/session` | cookie | boot-time restore: `{ authenticated, onboardingCompleted }` |
+| DELETE | `/api/auth/logout` | cookie | revoke all refresh tokens + clear cookies |
+| POST | `/api/auth/onboard` | 🔒 cookie/header | complete onboarding (genres, avatar, bio) |
+| PATCH | `/api/user/edit-profile` | 🔒 cookie/header | partial profile update (handle change: 1×/6 months) |
 
-- `users` — id, email, password_hash, display_name, role, profile_complete
-- `posts` — id, title, slug, content, author_id, status (draft/published), published_at
-- `comments` — id, post_id, author_id, parent_comment_id (nullable, for threading), content
-- `tags` / `post_tags` — categories and their many-to-many join to posts
-- `follows` — follower_id, followed_id
-- `reading_history` — user_id, post_id, read_at, time_spent
-- `user_tag_affinity` — user_id, tag_id, affinity_score (recomputed nightly)
-- `likes`, `bookmarks` — user_id, post_id (or comment_id)
+Successful responses use `{ success: true, data: … }`; failures use `{ success: false, message }` via the central error handler.
 
-## Background Jobs (BullMQ)
+## Notes / caveats
 
-Run in `worker.ts`, backed by Redis:
+- **Cookies and cross-origin dev:** the client (Vite, port 5173) calls the API on port 3000 — same *site* (`localhost`), so `SameSite=Lax` cookies still attach to `credentials: "include"` fetches as long as CORS origin is exact (it is).
+- **If you ever split the API onto its own domain in production**, cookies need `SameSite=None; Secure` and the client must keep `credentials: "include"` — prefer keeping the nginx same-origin proxy instead (already configured).
 
-| Job | Trigger |
-|---|---|
-| Welcome email | User signup |
-| Password reset email | User request |
-| Comment notification | New comment on followed post |
-| Image resize/optimize | Image upload |
-| Feed tag-affinity recompute | Nightly (scheduled) |
-| Weekly digest email | Scheduled (repeatable job) |
+## Migrations
 
-All jobs get automatic retry with backoff on failure.
+Applied automatically by the postgres container on first boot (`docker-entrypoint-initdb.d`). Numbered:
 
-## Feed Recommendation Logic (`feed` domain)
+1. `001_create_users.sql`
+2. `002_create_login_otps.sql` (partial unique index: one active OTP per user)
+3. `003_create_refresh_tokens.sql`
+4. `004_add_user_onboarding_fields.sql`
+5. `005_add_user_handle.sql` (partial unique index)
+6. `006_create_blogs.sql`
 
-- **Following tab:** direct query — posts from followed authors, newest first
-- **For You tab:**
-  - Cold start: genres selected at onboarding seed initial tag affinity
-  - `feed-recompute.job.ts` nightly job derives top tags per user from `reading_history`
-  - Results stored in `user_tag_affinity`, cached in Redis per user
-  - `feed.service.ts` serves from cache; falls back to on-demand query on cache miss
+No migration runner is wired into the server itself — schema changes during development currently require re-creating the postgres volume (or hand-applying SQL).
 
-## Security
+## Security notes
 
-- Password hashing via bcrypt/argon2
-- JWT-based auth (short-lived access token + refresh token)
-- Role-based access control (admin/editor/reader) enforced in `auth.middleware.ts`
-- Input validation/sanitization on all write endpoints (XSS prevention)
-- Rate limiting on auth and comment endpoints
-- Postgres/Redis reachable only on the internal Docker network — never exposed publicly
+- OTPs are bcrypt-hashed before storage and revoked on successful use; only one active OTP per user
+- Refresh tokens are stored only as SHA-256 hashes and rotated on every use
+- `JWT_SECRET` must be ≥32 characters (zod-enforced); Postgres/Redis live on the internal Docker network only
+- ⚠️ **Before production:** remove the hard-coded dev OTP `0000` (both in `requestOTP` and as a universal verify bypass), and add rate limiting on auth endpoints and a `handle_changed_at` / `website` migration for the edit-profile endpoint
 
-## Local Development
+## Known limitations
 
-```bash
-docker compose up server worker postgres redis
-```
-
-Runs the Express API (port `4000`) with hot reload, the BullMQ worker process, Postgres (`5432`), and Redis (`6379`).
-
----
+- `blog` domain is unmounted (`routes.ts` serves only auth + user)
+- No `/health` endpoint, no rate limiting, no request body validation layer (controllers trust the DTO shape)
+- Welcome email template exists but is never queued after sign-up
+- `pool.on("error")` calls `process.exit(-1)` — the process wrapper restarts it, but a graceful drain would be safer

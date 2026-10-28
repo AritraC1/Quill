@@ -168,7 +168,7 @@ const FeedPage = () => {
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const firstName = AUTHORS[CURRENT_USER_HANDLE]?.name.split(" ")[0] ?? "there";
+  const firstName = own.profile.name.split(" ")[0] || "there";
 
   const suggestions = Object.keys(AUTHORS)
     .filter((h) => h !== CURRENT_USER_HANDLE && !following.has(h))
@@ -294,7 +294,7 @@ const FeedPage = () => {
             </h3>
             {suggestions.length === 0 ? (
               <p className="text-[13px] text-[#8A8F8B]">
-                You’re following everyone here.
+                You're following everyone here.
               </p>
             ) : (
               <ul className="space-y-3">

@@ -3,38 +3,33 @@ import type {
   RequestOtpDTO,
   VerifyOtpDTO,
   AuthResponseDTO,
-  RefreshTokenDTO,
+  SessionResponseDTO,
   OnboardRequestDTO,
 } from "@quill/shared";
 import { API_ROUTES } from "../../../lib/api-routes";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL;
-const TOKEN_STORAGE_KEY = "quill_access_token";
-const REFRESH_TOKEN_STORAGE_KEY = "quill_refresh_token";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV ? "http://localhost:3000/api" : "/api");
 
-// Retrieves the access token and refresh token from localStorage.
-export const getStoredTokens = () => {
-  return {
-    accessToken: localStorage.getItem(TOKEN_STORAGE_KEY),
-    refreshToken: localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY),
-  };
-};
+/**
+ * Auth tokens live in httpOnly cookies set by the server (see
+ * apps/server/src/core/config/cookie.config.ts) — they are NEVER readable by
+ * JavaScript. Every request carries credentials so the browser attaches them.
+ */
 
-// Stores the access token and refresh token in localStorage,
-// called after successful authentication or token refresh.
-export const setStoredTokens = (accessToken: string, refreshToken: string) => {
-  localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
-  localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
-};
+/** Error carrying the HTTP status so callers can react to 401/403 precisely */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
-// Removes authentication tokens from localStorage
-// Used during logout or when token refresh fails
-export const clearStoredTokens = () => {
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
-};
-
-// Common request helper with error handling
+// Common request helper. Cookies are always attached; the server reads the
+// token from the httpOnly cookie (or Authorization header for API clients).
 async function sendRequest<T>(
   endpoint: string,
   options: RequestInit = {},
@@ -47,6 +42,7 @@ async function sendRequest<T>(
   }
 
   const response = await fetch(url, {
+    credentials: "include", // attach the httpOnly auth cookies
     ...options,
     headers,
   });
@@ -55,10 +51,9 @@ async function sendRequest<T>(
 
   if (!response.ok) {
     const message =
-      data?.error?.message ||
       data?.message ||
       `Request failed with status ${response.status}`;
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   return data?.data ?? data;
@@ -87,30 +82,20 @@ export async function requestOtpApi(
   });
 }
 
-// Verify OTP
+// Verify OTP — server sets the httpOnly cookies; body only has session metadata
 export async function verifyOtpApi(
   payload: VerifyOtpDTO,
 ): Promise<AuthResponseDTO> {
-  const data = await sendRequest<AuthResponseDTO>(API_ROUTES.AUTH.VERIFY_OTP, {
+  return sendRequest<AuthResponseDTO>(API_ROUTES.AUTH.VERIFY_OTP, {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  if (data?.accessToken && data?.refreshToken) {
-    setStoredTokens(data.accessToken, data.refreshToken);
-  }
-  return data;
 }
 
-// Refresh Token (Rotates refresh token and returns new pair)
+// Refresh Token (server reads the refresh cookie, rotates and re-issues it)
 let refreshPromise: Promise<AuthResponseDTO> | null = null;
 
 export async function refreshTokenApi(): Promise<AuthResponseDTO> {
-  const { refreshToken } = getStoredTokens();
-  if (!refreshToken) {
-    clearStoredTokens();
-    throw new Error("No refresh token available");
-  }
-
   // Prevent multiple concurrent refresh requests
   if (refreshPromise) {
     return refreshPromise;
@@ -118,25 +103,10 @@ export async function refreshTokenApi(): Promise<AuthResponseDTO> {
 
   refreshPromise = (async () => {
     try {
-      const payload: RefreshTokenDTO = { refreshToken };
-      const data = await sendRequest<AuthResponseDTO>(
-        API_ROUTES.AUTH.REFRESH_TOKEN,
-        {
-          method: "POST",
-          body: JSON.stringify(payload),
-        },
-      );
-
-      if (data?.accessToken && data?.refreshToken) {
-        setStoredTokens(data.accessToken, data.refreshToken);
-      } else {
-        clearStoredTokens();
-      }
-
-      return data;
-    } catch (err) {
-      clearStoredTokens();
-      throw err;
+      return await sendRequest<AuthResponseDTO>(API_ROUTES.AUTH.REFRESH_TOKEN, {
+        method: "POST",
+        body: "{}",
+      });
     } finally {
       refreshPromise = null;
     }
@@ -145,61 +115,47 @@ export async function refreshTokenApi(): Promise<AuthResponseDTO> {
   return refreshPromise;
 }
 
-// Logout
-export async function logoutApi(): Promise<{ success: boolean }> {
-  const { accessToken } = getStoredTokens();
-  try {
-    if (accessToken) {
-      await sendRequest<{ success: boolean }>(API_ROUTES.AUTH.LOGOUT, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-    }
-  } finally {
-    clearStoredTokens();
+// Session — shared (single-flight) boot-time auth state check. Being cached,
+// every useAuth() consumer can call it on mount without one request each.
+let sessionPromise: Promise<SessionResponseDTO> | null = null;
+
+export function sessionApi(): Promise<SessionResponseDTO> {
+  if (!sessionPromise) {
+    sessionPromise = sendRequest<SessionResponseDTO>(API_ROUTES.AUTH.SESSION, {
+      headers: { Accept: "application/json" },
+    }).finally(() => {
+      sessionPromise = null;
+    });
   }
-  return { success: true };
+  return sessionPromise;
 }
 
-// Authenticated Fetch with Automatic Refresh Token Rotation
+// Logout (server revokes the session and clears the cookies)
+export async function logoutApi(): Promise<{ success: boolean }> {
+  return sendRequest<{ success: boolean }>(API_ROUTES.AUTH.LOGOUT, {
+    method: "DELETE",
+  });
+}
+
+// Authenticated Fetch — cookies ride along automatically; on 401 (expired
+// access token) rotate the session once and retry
 export async function fetchWithAuth<T = unknown>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
-  let { accessToken } = getStoredTokens();
-
-  if (!accessToken) {
-    // Attempt refresh if refresh token exists
-    const refreshed = await refreshTokenApi();
-    accessToken = refreshed.accessToken;
-  }
-
-  const makeAttempt = async (token: string) => {
-    const headers = new Headers(options.headers || {});
-    headers.set("Authorization", `Bearer ${token}`);
-    return sendRequest<T>(endpoint, {
-      ...options,
-      headers,
-    });
-  };
-
-  if (!accessToken) {
-    throw new Error("User is not authenticated");
-  }
-
   try {
-    return await makeAttempt(accessToken);
+    return await sendRequest<T>(endpoint, {
+      ...options,
+      credentials: "include",
+    });
   } catch (error: unknown) {
-    // If unauthorized / token expired, rotate token once and retry
-    const message = error instanceof Error ? error.message.toLowerCase() : "";
-
-    if (message.includes("unauthorized") || message.includes("token")) {
-      const newTokens = await refreshTokenApi();
-      return await makeAttempt(newTokens.accessToken);
+    if (error instanceof ApiError && error.status === 401) {
+      await refreshTokenApi();
+      return await sendRequest<T>(endpoint, {
+        ...options,
+        credentials: "include",
+      });
     }
-
     throw error;
   }
 }

@@ -6,10 +6,9 @@ export type View =
   | "signinEmail"
   | "verifyOtp";
 
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  onboardingCompleted?: boolean;
+/** Result of a successful OTP verification — tokens never reach JS (httpOnly cookies) */
+export interface AuthSuccessResult {
+  onboardingCompleted: boolean;
 }
 
 export interface AuthPopupFormProps {
@@ -20,5 +19,5 @@ export interface AuthPopupFormProps {
   /** Which panel to open on first render. Defaults to the sign-up options. */
   initialView?: View;
   /** Optional callback fired when login/verification completes successfully */
-  onAuthSuccess?: (tokens: AuthTokens) => void;
+  onAuthSuccess?: (result: AuthSuccessResult) => void;
 }

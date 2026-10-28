@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "../features/auth";
 
 export const PublicOnlyRoute = () => {
-  const { isAuthenticated, isInitializing, tokens } = useAuth();
+  const { isAuthenticated, isInitializing, onboardingCompleted } = useAuth();
 
   // Wait for the session check so a refresh doesn't flash the landing page
   if (isInitializing) {
@@ -19,8 +19,7 @@ export const PublicOnlyRoute = () => {
 
   if (isAuthenticated) {
     // Brand-new users (just verified their OTP) still need onboarding
-    const target =
-      tokens?.onboardingCompleted === false ? "/onboarding" : "/feed";
+    const target = onboardingCompleted === false ? "/onboarding" : "/feed";
     return <Navigate to={target} replace />;
   }
 

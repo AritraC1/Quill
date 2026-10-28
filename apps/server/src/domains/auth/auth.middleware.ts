@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import TokenService from "./token.service";
 import { UnauthorizedError } from "../../core/errors";
+import { AUTH_COOKIES } from "../../core/config/cookie.config";
 
 const tokenService = new TokenService();
 
@@ -16,13 +17,15 @@ export async function requireAuth(
   res: Response,
   next: NextFunction,
 ) {
+  // Bearer header (programmatic clients) or httpOnly cookie (browser SPA)
   const authHeader = req.headers.authorization;
+  let token: string | undefined;
 
-  if (!authHeader?.startsWith("Bearer ")) {
-    return next(new UnauthorizedError("No token provided"));
+  if (authHeader?.startsWith("Bearer ")) {
+    token = authHeader.slice(7).trim();
+  } else {
+    token = req.cookies?.[AUTH_COOKIES.access.name] as string | undefined;
   }
-
-  const token = authHeader.slice(7).trim();
 
   if (!token) {
     return next(new UnauthorizedError("No token provided"));

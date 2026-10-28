@@ -3,6 +3,7 @@ dotenv.config();
 
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import swaggerUi from "swagger-ui-express";
 
 import routes from "./routes/routes";
@@ -24,6 +25,7 @@ app.use(
 );
 app.use(requestLogger);
 app.use(express.json());
+app.use(cookieParser());
 
 // Routes
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

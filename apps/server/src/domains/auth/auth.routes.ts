@@ -13,14 +13,17 @@ router.post("/sign-up", authController.createAccount);
 // Request OTP
 router.post("/request-otp", authController.requestOTP);
 
-// Verify OTP
+// Verify OTP (issues httpOnly auth cookies)
 router.post("/verify-otp", authController.verifyOTP);
 
-// Refresh Token
+// Refresh Token (rotates the pair; reads/sets httpOnly cookies)
 router.post("/refresh-token", authController.refreshToken);
 
-// Logout
-router.delete("/logout", requireAuth, authController.logout);
+// Session (boot-time state restore from the refresh cookie)
+router.get("/session", authController.session);
+
+// Logout (revokes the session and clears cookies)
+router.delete("/logout", authController.logout);
 
 // Onboarding
 router.post("/onboard", requireAuth, onboardingController.onboard);

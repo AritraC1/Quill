@@ -1,13 +1,17 @@
 import { useState, useCallback, useEffect } from "react";
-import type { AuthTokens } from "../types/auth.types";
+import type { AuthSuccessResult } from "../types/auth.types";
 import {
-  getStoredTokens,
   logoutApi,
   refreshTokenApi,
   requestOtpApi,
+  sessionApi,
   signUpApi,
   verifyOtpApi,
 } from "../api/auth.api";
+import {
+  clearStoredUser,
+  saveStoredUser,
+} from "../../../lib/user-store";
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;
@@ -15,48 +19,44 @@ function getErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-export function useAuth() {
-  const [tokens, setTokens] = useState<AuthTokens | null>(() => {
-    const { accessToken, refreshToken } = getStoredTokens();
-    if (accessToken && refreshToken) {
-      return { accessToken, refreshToken };
-    }
-    return null;
-  });
+interface AuthSession {
+  authenticated: boolean;
+  onboardingCompleted: boolean | null;
+}
 
-  // If there is only a refresh token in storage, we need to await the initial token refresh
-  const [isInitializing, setIsInitializing] = useState(() => {
-    const { accessToken, refreshToken } = getStoredTokens();
-    return Boolean(refreshToken && !accessToken);
-  });
+const SIGNED_OUT: AuthSession = { authenticated: false, onboardingCompleted: null };
+
+export function useAuth() {
+  // Session state derived from the httpOnly auth cookies (via GET /auth/session).
+  // Tokens themselves are never held in JS.
+  const [session, setSession] = useState<AuthSession>(SIGNED_OUT);
+
+  // Session is being verified on boot — route guards wait for this so a
+  // refresh doesn't bounce a signed-in user to the landing page
+  const [isInitializing, setIsInitializing] = useState(true);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const clearError = useCallback(() => setError(null), []);
 
-  // Refresh token on mount if we only have a refresh token stored
+  // Restore session on mount (single-flight: many useAuth() call sites,
+  // one network request)
   useEffect(() => {
-    const { accessToken, refreshToken } = getStoredTokens();
-
-    if (!refreshToken || accessToken) {
-      return;
-    }
-
     let cancelled = false;
 
-    refreshTokenApi()
+    sessionApi()
       .then((res) => {
-        if (cancelled) return;
-
-        setTokens({
-          accessToken: res.accessToken,
-          refreshToken: res.refreshToken,
-        });
+        if (!cancelled) {
+          setSession({
+            authenticated: true,
+            onboardingCompleted: res.onboardingCompleted ?? null,
+          });
+        }
       })
       .catch(() => {
         if (!cancelled) {
-          setTokens(null);
+          setSession(SIGNED_OUT);
         }
       })
       .finally(() => {
@@ -74,10 +74,13 @@ export function useAuth() {
     setIsLoading(true);
     setError(null);
     try {
-      return await signUpApi({
+      const user = await signUpApi({
         name: name.trim(),
         email: email.trim().toLowerCase(),
       });
+      // Keep the name for display while the API has no "get me" endpoint yet
+      saveStoredUser({ id: user.id, name: user.name, email: user.email });
+      return user;
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to create account"));
       throw err;
@@ -99,34 +102,37 @@ export function useAuth() {
     }
   }, []);
 
-  const verifyOtp = useCallback(async (email: string, otp: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const authRes = await verifyOtpApi({
-        email: email.trim().toLowerCase(),
-        otp: otp.trim(),
-      });
-      setTokens({
-        accessToken: authRes.accessToken,
-        refreshToken: authRes.refreshToken,
-        onboardingCompleted: authRes.onboardingCompleted,
-      });
-      return authRes;
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Invalid or expired OTP"));
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const verifyOtp = useCallback(
+    async (email: string, otp: string): Promise<AuthSuccessResult> => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const res = await verifyOtpApi({
+          email: email.trim().toLowerCase(),
+          otp: otp.trim(),
+        });
+        setSession({
+          authenticated: true,
+          onboardingCompleted: res.onboardingCompleted,
+        });
+        return { onboardingCompleted: res.onboardingCompleted };
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, "Invalid or expired OTP"));
+        throw err;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       await logoutApi();
-      setTokens(null);
+      setSession(SIGNED_OUT);
+      clearStoredUser();
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Logout failed"));
     } finally {
@@ -135,9 +141,9 @@ export function useAuth() {
   }, []);
 
   return {
-    isAuthenticated: Boolean(tokens?.accessToken),
+    isAuthenticated: session.authenticated,
+    onboardingCompleted: session.onboardingCompleted,
     isInitializing,
-    tokens,
     isLoading,
     error,
     clearError,
@@ -145,5 +151,7 @@ export function useAuth() {
     requestOtp,
     verifyOtp,
     logout,
+    // Kept for callers that need to force a rotation manually
+    refreshToken: refreshTokenApi,
   };
 }

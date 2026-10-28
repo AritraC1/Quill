@@ -1,112 +1,97 @@
-# Quill — Frontend
+# Quill Client
 
-## Overview
+The React single-page app for Quill — landing page, passwordless auth (email OTP), onboarding, feed, and profile management.
 
-Quill's frontend is a React + TypeScript application, styled with Tailwind CSS and built with Vite. It's structured by **feature domain** rather than by file type, so each part of the product (posts, comments, feed, auth, profile) owns its own components, hooks, and API calls end to end.
+## Stack
 
-## Tech Stack
+- **React 19** + **TypeScript**
+- **Vite 8** (dev server + bundler)
+- **Tailwind CSS v4** (via `@tailwindcss/vite` plugin)
+- **react-router-dom v7** (`createBrowserRouter` + route guards)
+- **sonner** for toasts, **lucide-react** / **react-icons** for icons
+- Shared DTO types from `@quill/shared` (workspace package)
 
-- React (TSX)
-- Tailwind CSS
-- Vite (dev server + build)
-- React Router (routing)
-- Bun (package manager, monorepo workspace)
+## Getting Started
 
-## Folder Structure
+```bash
+# from repo root
+bun install
+cp .env.example .env           # VITE_API_URL must point at the API (default http://localhost:3000/api)
+bun run dev:client             # Vite dev server at http://localhost:5173
+```
+
+The dev server reads `.env` from the **repo root** (`envDir` in `vite.config.ts`), so auth-related env vars live next to the server's.
+
+## Scripts
+
+| Command | Description |
+|---|---|
+| `bun run dev` (inside `apps/client`) | Vite dev server with HMR |
+| `bun run build` | `tsc -b` type check + production bundle → `dist/` |
+| `bun run lint` | ESLint |
+| `bun run preview` | Serve the production build locally |
+
+## Structure
 
 ```
 apps/client/src/
-├── features/
-│   ├── auth/
-│   │   ├── components/        (LoginForm, SignupForm)
-│   │   ├── hooks/              (useAuth)
-│   │   ├── api/                (auth.api.ts)
-│   │   └── types.ts
-│   │
-│   ├── posts/
-│   │   ├── components/         (PostCard, PostEditor, PostList)
-│   │   ├── hooks/               (usePosts, usePost)
-│   │   ├── api/                 (posts.api.ts)
-│   │   └── types.ts
-│   │
-│   ├── comments/
-│   │   ├── components/          (CommentThread, CommentForm)
-│   │   ├── hooks/                (useComments)
-│   │   └── api/                  (comments.api.ts)
-│   │
-│   ├── feed/                     (Following + For You tabs)
-│   │   ├── components/           (FeedTabs, FollowingFeed, ForYouFeed)
-│   │   ├── hooks/                 (useFeed)
-│   │   └── api/                   (feed.api.ts)
-│   │
-│   ├── profile/
-│   │   ├── components/           (ProfileHeader, FollowButton)
-│   │   ├── hooks/                 (useProfile)
-│   │   └── api/                   (profile.api.ts)
-│   │
-│   └── notifications/
-│       ├── components/            (NotificationBell)
-│       ├── hooks/                  (useNotifications)
-│       └── api/                    (notifications.api.ts)
-│
-├── pages/                          (route-level compositions)
-│   ├── LandingPage.tsx
-│   ├── HomePage.tsx                (the feed, post-login)
-│   ├── PostPage.tsx                (single post view)
-│   ├── ProfilePage.tsx
-│   ├── LoginPage.tsx
-│   ├── SignupPage.tsx
-│   ├── OnboardingPage.tsx          (genre selection)
-│   └── NotFoundPage.tsx
-│
-├── components/                     (shared, generic UI)
-│   ├── ui/                         (Button, Modal, Avatar, Spinner)
-│   └── layout/                     (Navbar, Sidebar, PageLayout)
-│
-├── lib/                             (cross-cutting utilities)
-│   ├── api-client.ts                (base fetch instance)
-│   ├── query-client.ts              (data-fetching/caching config)
-│   └── utils.ts
-│
+├── main.tsx                 entry (createRoot, StrictMode, Toaster)
+├── App.tsx                  mounts RouterProvider
 ├── routes/
-│   ├── router.tsx                   (path → page mapping, layout nesting, route guards)
-│   └── ProtectedRoute.tsx
-│
-├── store/                            (global state — auth, etc.)
-│   └── auth.store.ts
-│
-├── App.tsx
-└── main.tsx
+│   ├── Router.tsx           path → page mapping (createBrowserRouter)
+│   ├── ProtectedRoute.tsx   redirects unauthenticated users to "/"
+│   └── PublicOnlyRoute.tsx  bounces signed-in users to /feed or /onboarding
+├── features/                domain-driven feature folders
+│   ├── auth/
+│   │   ├── api/             auth.api.ts — fetch helpers, localStorage token store, single-flight refresh
+│   │   ├── hooks/           useAuth() — session/initialization state
+│   │   ├── components/      AuthPopupForm (multi-step auth modal), RememberMe
+│   │   └── onboarding/      OnboardingView — genres, avatar, bio → POST /auth/onboard
+│   ├── feed/                FeedPage — For you / Following tabs, StoryCard list (data mocked)
+│   └── profile/             ProfilePage (/profile, /u/:handle), EditProfilePage, useOwnProfile hook
+├── components/
+│   ├── layout/AppShell.tsx  sticky header, search, avatar menu, footer, mobile nav
+│   └── ui/                  StoryCard, SocialButton, TopicPill, CurvedArrow, InkIllustration
+├── pages/                   LandingPage, StatusPage, NotFoundPage
+├── hooks/useStoredSet.ts    localStorage-backed set state (bookmarks, follows)
+├── data/                    mock stories/authors while the blog API is unwired
+├── lib/api-routes.ts        route constants shared with API calls
+└── index.css                Tailwind import, fonts, ink-draw animation, grain texture
 ```
 
-## Design Principles
+## Routes
 
-- **`features/`** holds real business logic — data fetching, mutations, domain-specific state. Mirrors the backend's domain split one-to-one (`features/posts` ↔ `domains/posts` on the server).
-- **`pages/`** are composition roots — thin, layout-focused, pulling together components from one or more features. They don't own business logic themselves.
-- **`components/`** stays strictly generic and reusable — a `Button` or `Avatar` has no knowledge of posts, comments, or any domain.
-- **`router.tsx`** only wires paths to pages and applies layout/auth guards — it never contains data fetching or business logic.
+| Path | Access | Description |
+|---|---|---|
+| `/` | public (redirects if signed in) | Landing page + auth modal |
+| `/status` | public | Service status (stub) |
+| `/onboarding` | protected | Genre/avatar/bio selection |
+| `/feed` | protected | For you / Following feed |
+| `/profile` | protected | Own profile (stories, drafts, saved, about) |
+| `/profile/edit` | protected | Edit name, bio, topics, avatar, website |
+| `/u/:handle` | protected | Public author profile |
+| `*` | — | 404 "torn page" |
 
-## Key Flows
+## Auth flow
 
-**Onboarding → Feed**
-1. Signup → `OnboardingPage` (genre selection, minimum 3, skippable)
-2. On completion, redirect directly to `HomePage` (the feed) — not a profile setup screen
-3. `useFeed` hook fetches the "For You" feed, seeded by selected genres if no reading history exists yet
+1. `AuthPopupForm` collects name/email → `POST /auth/sign-up`, then `POST /auth/request-otp`
+2. OTP entry → `POST /auth/verify-otp` → the server **sets httpOnly auth cookies** (`quill_access_token` path `/`, `quill_refresh_token` path `/api/auth`); `HttpOnly` + `SameSite=Lax` (`Secure` in production) means the tokens are **never readable by JavaScript**
+3. `useAuth()` restores the session on mount via `GET /auth/session` (single-flight — one request regardless of how many components call `useAuth()`), which also returns the `onboardingCompleted` flag
+4. `fetchWithAuth()` sends `credentials: "include"`; on a `401` (expired access token) it rotates the session once via `POST /auth/refresh-token` and retries
+5. Logout → `DELETE /auth/logout` revokes all refresh tokens server-side and clears both cookies
 
-**Feed Tabs**
-- `FeedTabs` component switches between `FollowingFeed` (posts from followed authors) and `ForYouFeed` (personalized recommendations)
-- Both call `feed.api.ts`, which hits the backend's `feed` domain endpoints
+> Dev convenience: OTP `0000` always verifies while `AUTH_TEST_OTP` is enabled in the server (see server README before deploying).
 
-**Auth Guarding**
-- `ProtectedRoute` checks `auth.store` and redirects unauthenticated users to `/login`
-- Wraps any route requiring login (feed, profile, post editor)
+## Docker
 
-## Local Development
+`Dockerfile` is multi-stage:
 
-```bash
-docker compose up client
-```
+- `dev` — Vite dev server with hot reload, `--host 0.0.0.0`
+- `build` → `production` — static bundle served by **nginx:alpine**; `nginx.conf` provides SPA fallback (`try_files … /index.html`) and reverse-proxies `/api/` → `server:3000` and `/docs/` so the browser never needs CORS in production
 
-Runs the Vite dev server with hot reload on port `5173`, proxying API calls to the Express backend on `4000`.
+## Known limitations
 
----
+- Feed, profile stories/drafts/following, and search are **mocked locally** (`src/data/`) — the blog/feed domain is not wired to the API yet
+- **Auth tokens are httpOnly cookies** (`quill_access_token` path `/`, `quill_refresh_token` path `/api/auth`) — session state is restored boot-time via `GET /auth/session`; the display name is persisted separately in `quill_user` while a "get me" API doesn't exist
+- No error boundary — a render error currently blanks the page (root-level loader only)
+- Avatar images are stored as base64 data URLs in localStorage (size-limited); real uploads need object storage

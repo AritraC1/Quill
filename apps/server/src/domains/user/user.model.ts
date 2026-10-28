@@ -11,6 +11,6 @@ export interface UserModel {
   handle: string | null;
   created_at: Date;
   updated_at: Date;
-  handle_changed_at: Date;
+  handle_changed_at?: Date | null;
   blogs?: BlogModel[];
 }
