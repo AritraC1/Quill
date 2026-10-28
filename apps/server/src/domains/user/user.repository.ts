@@ -27,6 +27,16 @@ class UserRepository {
     return result.rows[0] || null;
   }
 
+  // find by handle (handle availability check)
+  async findByHandle(handle: string): Promise<UserModel | null> {
+    const query = `
+      SELECT * FROM users WHERE handle = $1 LIMIT 1;
+    `;
+
+    const result = await pool.query<UserModel>(query, [handle]);
+    return result.rows[0] || null;
+  }
+
   // create new user
   async createNewUser(data: SignUpRequestDTO): Promise<UserModel> {
     const query = `
@@ -93,7 +103,12 @@ class UserRepository {
       bio = COALESCE($3, bio),
       fav_genre = COALESCE($4, fav_genre),
       handle = COALESCE($5, handle),
-      website = COALESCE($6, website)
+      website = COALESCE($6, website),
+      -- the once-per-6-months clock only starts when the handle really changes
+      handle_changed_at = CASE
+        WHEN $5 IS NOT NULL AND handle IS DISTINCT FROM $5 THEN NOW()
+        ELSE handle_changed_at
+      END
     WHERE id = $1
     RETURNING *;
   `;

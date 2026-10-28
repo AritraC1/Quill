@@ -152,6 +152,29 @@ At least one `favGenre` item is required; `avatar` and `bio` are optional.
 
 ## 3. User (`/user`)
 
+### `GET /user/me` — authenticated
+
+The signed-in user's profile. `bio` is whatever the user wrote during onboarding — `null` when they never wrote one, so the client About tab stays empty. `website` is written only via `PATCH /user/edit-profile` (schema pending migration).
+
+**200 response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "name": "About Test",
+    "bio": "Bio written during onboarding.",
+    "avatar": null,
+    "handle": "abouttest611793",
+    "website": null,
+    "favGenre": ["essays"]
+  }
+}
+```
+
+**Errors:** `401` unauthenticated; `404` if the user row vanished.
+
 ### `PATCH /user/edit-profile` — authenticated
 
 The server accepts `avatar`, `bio`, `favGenre`, `handle`, and `website`, and returns the updated database row on success. The endpoint does not update `name`.
@@ -170,13 +193,72 @@ The server accepts `avatar`, `bio`, `favGenre`, `handle`, and `website`, and ret
 
 Fields are applied with `COALESCE`, so omitted or `null` values leave stored values unchanged. The TypeScript DTO marks `favGenre` as required, though the repository can accept an omitted value at runtime.
 
-**Current blocker:** the SQL query references `users.website`, which is not created by any checked-in migration, so the update currently fails at the database. The handle-change service also references `users.handle_changed_at`, which is not migrated; the six-month policy is therefore not enforced by the current schema. The client edit form does not call this endpoint and stores edits in `localStorage`.
+**Handle policy:** every account starts with a system-generated handle (e.g. `julianvance328641`, issued at OTP verification). The handle can be changed once every 6 months — `users.handle_changed_at` is stamped only when the handle actually changes, and subsequent changes inside the window are rejected with `400 "You can change your handle only once every 6 months"`. Handles must match `^[a-z0-9][a-z0-9_-]{2,29}$` (lowercase; normalized) and are unique — a collision returns `409`.
 
-## 4. Blog scaffold — no HTTP endpoints
+The profile URL is `<client-origin>/u/<handle>`; the client "Copy link" / "Share profile" menu always shares that canonical URL.
 
-`blogs` is the only content-related table created by the migrations. It has `id`, `user_id`, `title`, `blog_description`, `images`, `created_at`, and `updated_at`.
+**Note:** the client edit form persists changes server-side (`PATCH /user/edit-profile`) and mirrors them to `localStorage` for instant UI updates. Sending `"avatar": ""` clears the stored photo.
 
-The blog repository has partial lookup/create methods. Its update SQL is incomplete, and delete/list/count methods are absent. Blog service/controller/routes are not implemented or mounted. There are no post, feed, comment, tag, follow, like, bookmark, or public-profile API routes.
+## 4. Blog (`/blogs`) — all authenticated
+
+Blogs are markdown documents stored with a `draft`/`published` status. Every write
+flow persists as a draft; a draft becomes visible to everyone only when the
+author explicitly publishes it. `content` holds the canonical markdown/rich-text
+source; `blog_description` is an optional excerpt.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/blogs` | Create a blog — **always saved as a draft** |
+| GET | `/blogs?page&limit` | Feed: every published blog, newest first, with the viewer's `isBookmarked` flag |
+| GET | `/blogs/count` | Writer statistics: `{ published, drafts, total }` |
+| GET | `/blogs/drafts?page&limit` | The signed-in writer's drafts only |
+| GET | `/blogs/published?page&limit` | The signed-in writer's published blogs |
+| GET | `/blogs/bookmarks?page&limit` | The viewer's saved reading list |
+| GET | `/blogs/:id` | Single blog — drafts are 403 for anyone but the author |
+| PATCH | `/blogs/:id` | Partial edit (works while drafting and after publishing) |
+| DELETE | `/blogs/:id` | Delete a draft or published blog (owner only) |
+| POST | `/blogs/:id/publish` | Publish — `400` without a title, `400` if already published |
+| POST | `/blogs/:id/bookmark` | Save to the reading list |
+| DELETE | `/blogs/:id/bookmark` | Remove from the reading list |
+
+List responses are `{ items: BlogResponseDTO[], total }` and include the author
+(`name`, `handle`, `avatar`) from the users join. `isBookmarked` reflects the
+viewer's saved state on feed/detail/saved responses.
+
+**Request (create/update)**
+
+```json
+{
+  "title": "A Quiet Manifesto",
+  "content": "# A Quiet Manifesto\n\nSome **bold** thoughts.",
+  "description": "optional excerpt",
+  "images": ["https://..."]
+}
+```
+
+**Single blog response** (dates serialized as ISO strings):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid", "userId": "uuid", "title": "...", "content": "...",
+    "description": "", "images": null, "status": "published",
+    "publishedAt": "2026-10-28T15:38:34.508Z",
+    "createdAt": "...", "updatedAt": "...",
+    "author": { "id": "uuid", "name": "Test Writer", "handle": "quiet-writer", "avatar": null },
+    "isBookmarked": false
+  }
+}
+```
+
+**Errors:** `401` unauthenticated; `404` unknown blog; `403` editing/deleting or
+reading someone else's draft; `400` publish without a title, duplicate publish,
+or oversized `title`/`content`/`description`; `400` bookmarking an
+unpublished blog.
+
+Bookmark state lives in `blog_bookmarks` (unique per `(user_id, blog_id)`), so
+saved lists survive across devices.
 
 ## 5. System and documentation routes
 
@@ -185,7 +267,7 @@ The blog repository has partial lookup/create methods. Its update SQL is incompl
 | `/docs` | GET | Swagger UI; route files currently have no endpoint annotations |
 | `/health` | — | Not implemented |
 
-The API router is mounted at `/api`; only `/auth/*` and `/user/edit-profile` are currently mounted.
+The API router is mounted at `/api`; `/auth/*`, `/user/*`, and `/blogs/*` are mounted.
 
 ## 6. Background email job
 
@@ -207,8 +289,9 @@ The worker sends OTP email through Resend. No other job types are implemented.
 | `users` onboarding fields | `fav_genre`, `avatar`, `bio`, `onboarding_completed` | `004_add_user_onboarding_fields.sql` |
 | `users.handle` | Optional unique handle | `005_add_user_handle.sql` |
 | `blogs` | `user_id`, title, description, images, timestamps | `006_create_blogs.sql` |
-
-No migration currently creates `users.website` or `users.handle_changed_at`.
+| `blogs` workflow | `status` (`draft`/`published`), `content` (markdown), `published_at` | `007_blog_status_content_bookmarks.sql` |
+| `blog_bookmarks` | `user_id` ↔ `blog_id` unique pair, `created_at` | `007_blog_status_content_bookmarks.sql` |
+| `users.website`, `users.handle_changed_at` | Profile link + 6-month handle-lock clock | `008_user_website_handle_changed_at.sql` |
 
 ## 8. Client API mapping
 
@@ -221,6 +304,21 @@ No migration currently creates `users.website` or `users.handle_changed_at`.
 | `refreshTokenApi` | `POST /auth/refresh-token` |
 | `logoutApi` | `DELETE /auth/logout` |
 | `onboardApi` | `POST /auth/onboard` |
+| `getMeApi` | `GET /user/me` (profile bio restored for the About tab) |
 | `fetchWithAuth` | Shared cookie-auth helper; retries once after a 401 by refreshing |
+| `createBlogApi` | `POST /blogs` (draft) |
+| `updateBlogApi` | `PATCH /blogs/:id` |
+| `publishBlogApi` | `POST /blogs/:id/publish` |
+| `deleteBlogApi` | `DELETE /blogs/:id` |
+| `getBlogApi` | `GET /blogs/:id` |
+| `listFeedApi` | `GET /blogs?page&limit` |
+| `listMyPublishedApi` | `GET /blogs/published` |
+| `listDraftsApi` | `GET /blogs/drafts` |
+| `blogCountApi` | `GET /blogs/count` |
+| `bookmarkBlogApi` | `POST`/`DELETE /blogs/:id/bookmark` |
+| `listBookmarksApi` | `GET /blogs/bookmarks` |
+| `getBlogApi` | `GET /blogs/:id` (the `/blog/:id` reading page) |
 
-The profile update UI has no API integration. No client calls exist for blog, post, feed, follow, comment, like, bookmark, or search APIs.
+The client write editor (`/write`, `/write/:id`) autosaves as a draft and only
+publishes when the Publish button is pressed; the feed and profile tabs render
+API blogs through the existing `StoryCard` format.

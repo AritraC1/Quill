@@ -107,7 +107,7 @@ export const AppShell = ({
           <div className="flex items-center gap-3 sm:gap-4 justify-self-end">
             {/* Write button (desktop only) */}
             <Link
-              to="/feed"
+              to="/write"
               className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-[#A8D5BA] px-3.5 py-1.5 min-h-9 text-[14px] font-medium text-[#1B1F1C] hover:bg-[#97C7AA] transition-colors shadow-sm"
             >
               <PenSquare className="w-4 h-4 text-[#1B1F1C]" />
@@ -270,7 +270,7 @@ export const AppShell = ({
         </Link>
 
         <Link
-          to="/feed"
+          to="/write"
           className="flex flex-col items-center gap-1 text-[#1F3D2F]"
         >
           <PenSquare className="w-5 h-5" />

@@ -9,6 +9,8 @@ import { FeedView } from "../features/feed";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicOnlyRoute } from "./PublicOnlyRoute";
 import EditProfilePage from "../features/profile/page/EditProfilePage";
+import WritePage from "../features/blog/page/WritePage";
+import BlogPage from "../features/blog/page/BlogPage";
 
 const Router = createBrowserRouter([
   {
@@ -33,6 +35,9 @@ const Router = createBrowserRouter([
           { path: "profile", element: <ProfilePage /> },
           { path: "profile/edit", element: <EditProfilePage /> },
           { path: "u/:handle", element: <ProfilePage /> },
+          { path: "write", element: <WritePage /> },
+          { path: "write/:id", element: <WritePage /> },
+          { path: "blog/:id", element: <BlogPage /> },
         ],
       },
     ],

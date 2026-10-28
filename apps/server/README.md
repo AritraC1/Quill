@@ -61,8 +61,12 @@ apps/server/src/
 │   │   ├── user.service.ts        profile update rules (handle locked 6 months)
 │   │   ├── user.repository.ts     users table queries
 │   │   └── user.model.ts          UserModel
-│   └── blog/                      ⚠️ SCAFFOLD ONLY — service/controller/routes are empty;
-│                                     repository has partial queries (broken `updateBlog` SQL)
+│   └── blog/
+│   │   ├── blog.controller.ts     HTTP layer (POST/PATCH/DELETE/publish/bookmark handlers)
+│   │   ├── blog.service.ts        draft rules, ownership + publish validation, DTO mapping
+│   │   ├── blog.repository.ts     blogs + blog_bookmarks queries (CRUD, counts, lists)
+│   │   ├── blog.routes.ts         /blogs CRUD + /:id/publish + /:id/bookmark
+│   │   └── blog.model.ts          BlogModel, BlogWithAuthorModel
 ├── jobs/
 │   ├── queue.ts                   emailQueue (BullMQ "email" queue)
 │   └── email.job.ts               Worker — sends OTP emails via Resend (concurrency 10, retry ×3)
@@ -108,19 +112,21 @@ Applied automatically by the postgres container on first boot (`docker-entrypoin
 4. `004_add_user_onboarding_fields.sql`
 5. `005_add_user_handle.sql` (partial unique index)
 6. `006_create_blogs.sql`
+7. `007_blog_status_content_bookmarks.sql` (draft/published `status`, markdown `content`, `blog_bookmarks`)
+8. `008_user_website_handle_changed_at.sql` (`users.website`, the 6-month handle-lock clock)
 
-No migration runner is wired into the server itself — schema changes during development currently require re-creating the postgres volume (or hand-applying SQL).
+No migration runner is wired into the server itself — schema changes during development currently require re-creating the postgres volume (or hand-applying SQL). `007` is idempotent, so it can be applied safely to an existing dev volume with `psql -f 007_blog_status_content_bookmarks.sql`.
 
 ## Security notes
 
 - OTPs are bcrypt-hashed before storage and revoked on successful use; only one active OTP per user
 - Refresh tokens are stored only as SHA-256 hashes and rotated on every use
 - `JWT_SECRET` must be ≥32 characters (zod-enforced); Postgres/Redis live on the internal Docker network only
-- ⚠️ **Before production:** remove the hard-coded dev OTP `0000` (both in `requestOTP` and as a universal verify bypass), and add rate limiting on auth endpoints and a `handle_changed_at` / `website` migration for the edit-profile endpoint
+- ⚠️ **Before production:** remove the hard-coded dev OTP `0000` (both in `requestOTP` and as a universal verify bypass), and add rate limiting on auth endpoints (`users.website` and `users.handle_changed_at` now exist via migration `008`)
 
 ## Known limitations
 
-- `blog` domain is unmounted (`routes.ts` serves only auth + user)
-- No `/health` endpoint, no rate limiting, no request body validation layer (controllers trust the DTO shape)
+- `blog` domain mounted under `/api/blogs` (draft → publish workflow, bookmarks, counts)
+- No `/health` endpoint, no rate limiting, no request body validation layer (controllers trust the DTO shape; blog service caps title 200 / content 500k / description 500 chars)
 - Welcome email template exists but is never queued after sign-up
 - `pool.on("error")` calls `process.exit(-1)` — the process wrapper restarts it, but a graceful drain would be safer

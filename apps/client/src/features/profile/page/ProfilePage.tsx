@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
+import type { BlogCountDTO } from "@quill/shared";
 import { AppShell } from "../../../components/layout/AppShell";
 import { StoryCard } from "../../../components/ui/StoryCard";
 import { useStoredSet } from "../../../hooks/useStoredSet";
@@ -11,9 +12,19 @@ import {
   CURRENT_USER_HANDLE,
   DEFAULT_SAVED,
   DEFAULT_FOLLOWING,
-  INITIAL_DRAFTS,
   type Draft,
 } from "../../../data/mockProfiles";
+import {
+  blogCountApi,
+  bookmarkBlogApi,
+  deleteBlogApi,
+  listBookmarksApi,
+  listDraftsApi,
+  listMyPublishedApi,
+} from "../../blog/api/blog.api";
+import { blogToDraft, blogToStory, isServerBlogId } from "../../blog/lib/blog-story";
+import type { BlogResponseDTO } from "@quill/shared";
+import type { Story } from "../types/story.types";
 import EmptyState from "../components/EmptyState";
 import ProfileMenu from "../components/ProfileMenu";
 import DraftRow from "../components/DraftRow";
@@ -36,14 +47,16 @@ const ProfileView = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const own = useOwnProfile();
 
-  const profileHandle = handle ?? CURRENT_USER_HANDLE;
-  const isOwn = profileHandle === CURRENT_USER_HANDLE;
+  // Own profile: the real (server-generated) handle; visitors come via /u/:handle
+  const ownHandle = own.profile.handle ?? CURRENT_USER_HANDLE;
+  const navigate = useNavigate();
+  const isOwn = handle === undefined || handle === ownHandle;
+  const profileHandle = isOwn ? ownHandle : handle ?? ownHandle;
   const author = isOwn ? own.profile : AUTHORS[profileHandle];
 
   const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
   const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
 
-  const [drafts, setDrafts] = useState<Draft[]>(INITIAL_DRAFTS);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
@@ -53,8 +66,45 @@ const ProfileView = () => {
   const setTab = (t: Tab) =>
     setSearchParams(t === "stories" ? {} : { tab: t }, { replace: true });
 
-  if (handle && handle === CURRENT_USER_HANDLE)
-    return <Navigate to="/profile" replace />;
+  // ---- Blogs from the API (own profile only; visitors still see mock data) ----
+  const [ownBlogDtos, setOwnBlogDtos] = useState<BlogResponseDTO[]>([]);
+  const [serverDrafts, setServerDrafts] = useState<Draft[]>([]);
+  const [savedBlogDtos, setSavedBlogDtos] = useState<BlogResponseDTO[]>([]);
+  const [blogCount, setBlogCount] = useState<BlogCountDTO | null>(null);
+
+  useEffect(() => {
+    if (!isOwn) return;
+    let cancelled = false;
+
+    // writer statistics: number of blogs published / in draft
+    blogCountApi()
+      .then((count) => {
+        if (!cancelled) setBlogCount(count);
+      })
+      .catch(() => {});
+    listMyPublishedApi()
+      .then((res) => {
+        if (!cancelled) setOwnBlogDtos(res.items);
+      })
+      .catch(() => {});
+    listDraftsApi()
+      .then((res) => {
+        if (!cancelled) setServerDrafts(res.items.map(blogToDraft));
+      })
+      .catch(() => {});
+    listBookmarksApi()
+      .then((res) => {
+        if (!cancelled) setSavedBlogDtos(res.items);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwn, activeTab]);
+
+  // /u/<own-handle> is the same page as /profile — canonicalize
+  if (handle && isOwn) return <Navigate to="/profile" replace />;
 
   if (!author) {
     return (
@@ -71,7 +121,7 @@ const ProfileView = () => {
     );
   }
 
-  const withSaved = (list: typeof ALL_STORIES) =>
+  const withSaved = (list: Story[]) =>
     list.map((s) => ({
       ...s,
       isBookmarked: bookmarks.has(s.id),
@@ -85,21 +135,62 @@ const ProfileView = () => {
           : s.author,
     }));
 
-  const publishedStories = withSaved(
-    ALL_STORIES.filter((s) => s.author.handle === `@${profileHandle}`),
-  );
-  const savedStories = withSaved(
-    ALL_STORIES.filter((s) => bookmarks.has(s.id)),
-  );
+  const publishedStories = isOwn
+    ? ownBlogDtos.map((b) => blogToStory(b, ownHandle))
+    : withSaved(ALL_STORIES.filter((s) => s.author.handle === `@${profileHandle}`));
+  const savedStories = isOwn
+    ? savedBlogDtos.map((b) => blogToStory(b, ownHandle))
+    : withSaved(ALL_STORIES.filter((s) => bookmarks.has(s.id)));
 
   const isFollowing = following.has(profileHandle);
   const followerCount = author.followers + (isFollowing ? 1 : 0);
 
   const handleBookmark = (storyId: string, next: boolean) => {
-    bookmarks.set(storyId, next);
-    toast(next ? "Saved to reading list" : "Removed from saved", {
-      id: "bookmark", // a rapid second tap replaces the toast instead of stacking
-    });
+    // Server-backed blogs go through the API; mock stories stay local
+    if (isServerBlogId(storyId)) {
+      // optimistic update, reverted on failure
+      const apply = (nextState: boolean) => {
+        setOwnBlogDtos((prev) =>
+          prev.map((b) =>
+            b.id === storyId ? { ...b, isBookmarked: nextState } : b,
+          ),
+        );
+        setSavedBlogDtos((prev) =>
+          nextState
+            ? prev.some((b) => b.id === storyId)
+              ? prev
+              : [...prev, ...ownBlogDtos.filter((b) => b.id === storyId)]
+            : prev.filter((b) => b.id !== storyId),
+        );
+      };
+      apply(next);
+      bookmarkBlogApi(storyId, next)
+        .then(() =>
+          toast(next ? "Saved to reading list" : "Removed from saved", {
+            id: "bookmark",
+          }),
+        )
+        .catch(() => {
+          apply(!next);
+          toast.error("Could not update bookmark");
+        });
+    } else {
+      bookmarks.set(storyId, next);
+      toast(next ? "Saved to reading list" : "Removed from saved", {
+        id: "bookmark", // a rapid second tap replaces the toast instead of stacking
+      });
+    }
+  };
+
+  // Own-blog actions from the card's 3-dots menu
+  const handleEdit = (storyId: string) => navigate(`/write/${storyId}`);
+
+  const handleDelete = (storyId: string) => {
+    setOwnBlogDtos((prev) => prev.filter((b) => b.id !== storyId));
+    setSavedBlogDtos((prev) => prev.filter((b) => b.id !== storyId));
+    deleteBlogApi(storyId)
+      .then(() => toast("Story deleted"))
+      .catch(() => toast.error("Could not delete the story"));
   };
 
   const handleFollow = () => {
@@ -111,9 +202,11 @@ const ProfileView = () => {
   };
 
   const handleDeleteDraft = (id: string) => {
-    setDrafts((prev) => prev.filter((d) => d.id !== id));
     setConfirmId(null);
-    toast("Draft deleted");
+    setServerDrafts((prev) => prev.filter((d) => d.id !== id));
+    deleteBlogApi(id)
+      .then(() => toast("Draft deleted"))
+      .catch(() => toast.error("Could not delete draft"));
   };
 
   const handleLoadMore = () => {
@@ -134,6 +227,8 @@ const ProfileView = () => {
             key={story.id}
             story={story}
             onBookmarkToggle={handleBookmark}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
           />
         ))}
       </div>
@@ -171,16 +266,23 @@ const ProfileView = () => {
               <p className="text-[13px] text-[#8A8F8B] mt-0.5">
                 {followerCount.toLocaleString()} Followers
               </p>
+              {isOwn && blogCount && (
+                <p className="text-[13px] text-[#8A8F8B] mt-0.5">
+                  {blogCount.published} published · {blogCount.drafts} drafts
+                </p>
+              )}
             </div>
 
             <div className="md:hidden">
-              <ProfileMenu isOwn={isOwn} name={author.name} />
+              <ProfileMenu isOwn={isOwn} name={author.name} handle={profileHandle} />
             </div>
           </div>
 
-          <p className="mt-4 md:mt-3.5 text-[14px] leading-5.5 text-[#5C625E]">
-            {author.bio}
-          </p>
+          {author.bio?.trim() ? (
+            <p className="mt-4 md:mt-3.5 text-[14px] leading-5.5 text-[#5C625E]">
+              {author.bio}
+            </p>
+          ) : null}
 
           {author.website && (
             <a
@@ -289,7 +391,7 @@ const ProfileView = () => {
             <h1 className="font-editorial text-[42px] font-normal text-[#1B1F1C] tracking-tight">
               {author.name}
             </h1>
-            <ProfileMenu isOwn={isOwn} name={author.name} />
+            <ProfileMenu isOwn={isOwn} name={author.name} handle={profileHandle} />
           </div>
 
           <div
@@ -360,7 +462,7 @@ const ProfileView = () => {
               <div className="py-2 text-[13px] text-[#8A8F8B]">
                 <span>Only you can see your drafts.</span>
               </div>
-              {drafts.length === 0 ? (
+              {serverDrafts.length === 0 ? (
                 <EmptyState
                   title="No drafts"
                   body="Anything you start writing is saved here until you publish it."
@@ -368,7 +470,7 @@ const ProfileView = () => {
                   ctaTo="/write"
                 />
               ) : (
-                drafts.map((d) => (
+                serverDrafts.map((d) => (
                   <DraftRow
                     key={d.id}
                     draft={d}
@@ -396,7 +498,18 @@ const ProfileView = () => {
 
           {activeTab === "about" && (
             <div className="py-7 max-w-prose text-[15px] leading-7 text-[#5C625E]">
-              <p>{author.bio}</p>
+              {author.bio?.trim() ? (
+                <p>{author.bio}</p>
+              ) : isOwn ? (
+                <EmptyState
+                  title="No bio yet"
+                  body="Write a few lines about yourself during onboarding or add one from edit profile."
+                  ctaLabel="Add a bio"
+                  ctaTo="/profile/edit"
+                />
+              ) : (
+                <p className="text-[#8A8F8B]">No bio yet.</p>
+              )}
               <p className="mt-5 text-[13px] text-[#8A8F8B]">
                 Member since {author.joined}
               </p>

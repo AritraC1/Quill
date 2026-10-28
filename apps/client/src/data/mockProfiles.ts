@@ -15,6 +15,7 @@ export interface Author {
   topics: string[];
   color: string;
   joined: string;
+  handleChangedAt?: string; // ISO — from /user/me; starts the 6-month lock
 }
 
 export const AUTHORS: Record<string, Author> = {

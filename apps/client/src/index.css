@@ -29,6 +29,89 @@
   }
 }
 
+/* Rendered markdown inside the blog editor (rich text surface + preview) */
+.editor-surface h1, .prose-preview h1 {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 1.9rem;
+  font-weight: 600;
+  margin: 1.2rem 0 0.4rem;
+  line-height: 1.2;
+}
+
+.editor-surface h2, .prose-preview h2 {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 1.45rem;
+  font-weight: 600;
+  margin: 1rem 0 0.35rem;
+  line-height: 1.25;
+}
+
+.editor-surface h3, .prose-preview h3 {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0.9rem 0 0.3rem;
+}
+
+.editor-surface p, .prose-preview p {
+  margin: 0.65rem 0;
+}
+
+.editor-surface blockquote, .prose-preview blockquote {
+  border-left: 3px solid #1F3D2F;
+  padding-left: 1rem;
+  margin: 0.8rem 0;
+  color: #5C625E;
+}
+
+.editor-surface pre, .prose-preview pre {
+  background: #F0EDE4;
+  border-radius: 0.5rem;
+  padding: 0.9rem 1rem;
+  margin: 0.8rem 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+.editor-surface :not(pre) > code, .prose-preview :not(pre) > code {
+  background: #F0EDE4;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.editor-surface ul, .editor-surface ol, .prose-preview ul, .prose-preview ol {
+  padding-left: 1.4rem;
+  margin: 0.65rem 0;
+}
+
+.editor-surface ul, .prose-preview ul {
+  list-style: disc;
+}
+
+.editor-surface ol, .prose-preview ol {
+  list-style: decimal;
+}
+
+.editor-surface a, .prose-preview a {
+  color: #1F3D2F;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.editor-surface img, .prose-preview img {
+  max-width: 100%;
+  border-radius: 0.75rem;
+}
+
+.editor-surface hr, .prose-preview hr {
+  border: none;
+  border-top: 1px solid #E6E2D8;
+  margin: 1.2rem 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .quill-stroke {
     animation: none;

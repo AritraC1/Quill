@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, X } from "lucide-react";
+import { toast } from "sonner";
 import { useOwnProfile } from "../hooks/useOwnProfile";
+import { editProfileApi } from "../api/profile.api";
 import { AppShell } from "../../../components/layout/AppShell";
 import { CURRENT_USER_HANDLE } from "../../../data/mockProfiles";
 
@@ -12,8 +14,13 @@ const TOPIC_OPTIONS = [
   "Technology", "Culture", "Science", "Writing", "History",
 ];
 
+// Same shape the system generates at first login ("julianvance328641")
+const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{2,29}$/;
+const HANDLE_LOCK_MONTHS = 6;
+
 interface FormState {
   name: string;
+  handle: string;
   bio: string;
   topics: string[];
   website: string;
@@ -97,6 +104,7 @@ export const EditProfilePage = () => {
 
   const [initial] = useState<FormState>(() => ({
     name: profile.name,
+    handle: profile.handle ?? CURRENT_USER_HANDLE,
     bio: profile.bio,
     topics: profile.topics,
     website: profile.website ?? "",
@@ -105,6 +113,7 @@ export const EditProfilePage = () => {
   const [form, setForm] = useState<FormState>(initial);
   const [topicInput, setTopicInput] = useState("");
   const [showErrors, setShowErrors] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -112,12 +121,29 @@ export const EditProfilePage = () => {
 
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
 
+  // Handle lock: unlocked right after onboarding, then 1 change per 6 months
+  const handleLock = (() => {
+    if (!profile.handleChangedAt) {
+      return { locked: false, nextDate: null as Date | null };
+    }
+    const nextDate = new Date(profile.handleChangedAt);
+    nextDate.setMonth(nextDate.getMonth() + HANDLE_LOCK_MONTHS);
+    return {
+      locked: new Date() < nextDate,
+      nextDate,
+    };
+  })();
+
+  const handleChanged = form.handle.trim().toLowerCase() !== initial.handle;
   const nameLen = form.name.trim().length;
   const errors = {
     name: nameLen < 2 ? "Enter at least 2 characters" : nameLen > 50 ? "Keep your name under 50 characters" : "",
+    handle: !HANDLE_PATTERN.test(form.handle.trim().toLowerCase())
+      ? "3–30 characters: lowercase letters, numbers, underscores and hyphens"
+      : "",
     website: websiteError(form.website),
   };
-  const valid = !errors.name && !errors.website;
+  const valid = !errors.name && !errors.handle && !errors.website;
 
   // Warn on refresh or tab close with unsaved edits
   useEffect(() => {
@@ -164,9 +190,31 @@ export const EditProfilePage = () => {
 
   const removeTopic = (t: string) => set("topics", form.topics.filter((x) => x !== t));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setShowErrors(true);
     if (!valid) return;
+
+    // Server is the source of truth — handle changes enforce the 6-month rule
+    try {
+      setIsSaving(true);
+      await editProfileApi({
+        avatar: form.avatarUrl ?? "", // empty clears the stored photo
+        bio: form.bio.trim(),
+        favGenre: form.topics,
+        // only send the handle when it actually changed (server normalizes)
+        handle: handleChanged ? form.handle.trim().toLowerCase() : undefined,
+        website: normalizeWebsite(form.website) || undefined,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Couldn't save your profile";
+      toast.error(message);
+      setIsSaving(false);
+      return;
+    }
+
     leaving.current = true;
     save({
       name: form.name.trim(),
@@ -260,14 +308,48 @@ export const EditProfilePage = () => {
           />
         </Field>
 
-        <Field label="Handle" htmlFor="handle" hint="Your handle can’t be changed yet.">
+        <Field
+          label="Handle"
+          htmlFor="handle"
+          error={showErrors ? errors.handle : ""}
+          hint={
+            handleLock.locked ? (
+              handleLock.nextDate && !handleChanged ? (
+                <span>
+                  Generated when you joined. Next change available{" "}
+                  {handleLock.nextDate.toLocaleDateString("en-US", {
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                  {" "}— one change every 6 months.
+                </span>
+              ) : (
+                "Your profile link: " + profile.handle
+              )
+            ) : (
+              "Generated when you joined. You can change it once every 6 months."
+            )
+          }
+        >
           <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[#8A8F8B]">@</span>
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[#8A8F8B]">
+              @
+            </span>
             <input
               id="handle"
-              value={CURRENT_USER_HANDLE}
-              disabled
-              className={`${inputCls} pl-7 bg-[#F0EDE4] text-[#5C625E] cursor-not-allowed`}
+              value={form.handle}
+              disabled={handleLock.locked}
+              onChange={(e) =>
+                set("handle", e.target.value.toLowerCase().replace(/\s+/g, ""))
+              }
+              maxLength={30}
+              aria-invalid={showErrors && Boolean(errors.handle)}
+              className={`${inputCls} pl-7 ${
+                handleLock.locked
+                  ? "bg-[#F0EDE4] text-[#5C625E] cursor-not-allowed"
+                  : ""
+              }`}
             />
           </div>
         </Field>
@@ -378,11 +460,11 @@ export const EditProfilePage = () => {
           </button>
           <button
             type="button"
-            onClick={handleSave}
-            disabled={!dirty || avatarBusy}
+            onClick={() => void handleSave()}
+            disabled={!dirty || avatarBusy || isSaving}
             className="inline-flex h-9 items-center gap-2 rounded-full bg-[#1F3D2F] px-5 text-[13px] font-medium text-white hover:bg-[#2A5240] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {avatarBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+            {isSaving || avatarBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             Save changes
           </button>
         </div>

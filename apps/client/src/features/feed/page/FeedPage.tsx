@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Sparkles, Users, Loader2 } from "lucide-react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { StoryCard } from "../../../components/ui/StoryCard";
@@ -10,6 +10,14 @@ import {
   DEFAULT_FOLLOWING,
 } from "../../../data/mockProfiles";
 import { STORIES, DEFAULT_SAVED } from "../../../data/stories";
+import type { BlogResponseDTO } from "@quill/shared";
+import type { Story } from "../../profile/types/story.types";
+import {
+  listFeedApi,
+  bookmarkBlogApi,
+  deleteBlogApi,
+} from "../../blog/api/blog.api";
+import { blogToStory, isServerBlogId } from "../../blog/lib/blog-story";
 import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
 import Empty from "../components/Empty";
 import FollowButton from "../components/FollowButton";
@@ -34,6 +42,7 @@ const TABS = [
 type Tab = (typeof TABS)[number]["id"];
 
 const FeedPage = () => {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("for-you");
   const [topic, setTopic] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,6 +55,23 @@ const FeedPage = () => {
   const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
 
   const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
+
+  // Published blogs from the API, newest first (mock stories follow below)
+  const [feedBlogs, setFeedBlogs] = useState<BlogResponseDTO[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listFeedApi(1, 20)
+      .then((res) => {
+        if (!cancelled) setFeedBlogs(res.items);
+      })
+      .catch(() => {
+        /* the feed still shows local stories when the API is unreachable */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -71,21 +97,26 @@ const FeedPage = () => {
     [],
   );
 
+  const ownHandle = own.profile.handle ?? CURRENT_USER_HANDLE;
+
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
-    let list = STORIES.map((s) => ({
-      ...s,
-      isBookmarked: bookmarks.items.includes(s.id),
-      author:
-        s.author.handle === `@${CURRENT_USER_HANDLE}`
-          ? {
-              ...s.author,
-              name: own.profile.name,
-              avatar: own.profile.avatarUrl ?? s.author.avatar,
-            }
-          : s.author,
-    }));
+    let list: Story[] = [
+      ...feedBlogs.map((b) => blogToStory(b, ownHandle)),
+      ...STORIES.map((s) => ({
+        ...s,
+        isBookmarked: bookmarks.items.includes(s.id),
+        author:
+          s.author.handle === `@${CURRENT_USER_HANDLE}`
+            ? {
+                ...s.author,
+                name: own.profile.name,
+                avatar: own.profile.avatarUrl ?? s.author.avatar,
+              }
+            : s.author,
+      })),
+    ];
 
     if (tab === "following")
       list = list.filter((s) =>
@@ -103,6 +134,8 @@ const FeedPage = () => {
     }
     return list;
   }, [
+    feedBlogs,
+    ownHandle,
     tab,
     topic,
     searchQuery,
@@ -151,8 +184,39 @@ const FeedPage = () => {
   };
 
   const handleBookmark = (storyId: string, next: boolean) => {
-    bookmarks.set(storyId, next);
-    showToast(next ? "Saved to reading list" : "Removed from saved");
+    // Server-backed blogs go through the API; mock stories stay local
+    if (isServerBlogId(storyId)) {
+      setFeedBlogs((prev) =>
+        prev.map((b) =>
+          b.id === storyId ? { ...b, isBookmarked: next } : b,
+        ),
+      );
+      bookmarkBlogApi(storyId, next)
+        .then(() =>
+          showToast(next ? "Saved to reading list" : "Removed from saved"),
+        )
+        .catch(() => {
+          setFeedBlogs((prev) =>
+            prev.map((b) =>
+              b.id === storyId ? { ...b, isBookmarked: !next } : b,
+            ),
+          );
+          showToast("Could not update bookmark");
+        });
+    } else {
+      bookmarks.set(storyId, next);
+      showToast(next ? "Saved to reading list" : "Removed from saved");
+    }
+  };
+
+  // Own-blog actions from the card's 3-dots menu
+  const handleEdit = (storyId: string) => navigate(`/write/${storyId}`);
+
+  const handleDelete = (storyId: string) => {
+    setFeedBlogs((prev) => prev.filter((b) => b.id !== storyId));
+    deleteBlogApi(storyId)
+      .then(() => showToast("Story deleted"))
+      .catch(() => showToast("Could not delete the story"));
   };
 
   const toggleFollow = (handle: string) => {
@@ -248,6 +312,8 @@ const FeedPage = () => {
                   story={story}
                   layout="list"
                   onBookmarkToggle={handleBookmark}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
                 />
               ))}
 

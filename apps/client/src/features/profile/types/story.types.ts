@@ -19,4 +19,6 @@ export interface Story {
   isPinned?: boolean;
   isStaffPick?: boolean;
   iconType?: "letter" | "quill" | "bell";
+  /** true only for API blogs owned by the viewer — enables the edit/delete menu */
+  isMine?: boolean;
 }

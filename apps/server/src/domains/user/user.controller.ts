@@ -9,6 +9,25 @@ class UserController {
     this.userService = new UserService();
   }
 
+  // Get my profile — GET /user/me
+  getMe = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const result = await this.userService.getMe(userId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // Edit User Profile
   editUserProfile = async (
     req: Request,

@@ -5,6 +5,9 @@ import UserController from "./user.controller";
 const router = express.Router();
 const userController = new UserController();
 
+// My profile
+router.get("/me", requireAuth, userController.getMe);
+
 // Edit User profile
 router.patch("/edit-profile", requireAuth, userController.editUserProfile);
 

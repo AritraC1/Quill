@@ -35,6 +35,18 @@ export interface RefreshTokenDTO {
 
 // -------------- USER -------------- //
 
+/** GET /user/me — the signed-in user's profile (bio comes from onboarding) */
+export interface UserProfileDTO {
+  id: string;
+  name: string;
+  bio?: string | null; // empty until written during onboarding or edited
+  avatar?: string | null;
+  handle?: string | null; // system-generated at first login; editable 1×/6 months
+  handleChangedAt?: string | null; // ISO date of the last handle change
+  website?: string | null;
+  favGenre: string[];
+}
+
 // Onboarding a new user
 export interface OnboardRequestDTO {
   avatar?: string;
@@ -53,14 +65,61 @@ export interface EditProfileDTO {
 
 // -------------- BLOG -------------- //
 
+// Blogs are always saved as drafts and only go live when explicitly published
+export type BlogStatus = "draft" | "published";
+
 export interface CreateBlogDTO {
-  title: string;
-  description: string;
+  title?: string; // drafts may start untitled
+  content?: string; // markdown / rich-text source
+  description?: string;
   images?: string[];
 }
 
 export interface UpdateBlogDTO {
-  title: string;
-  description: string;
+  title?: string;
+  content?: string;
+  description?: string;
   images?: string[];
+}
+
+export interface BlogAuthorDTO {
+  id: string;
+  name: string;
+  handle?: string | null;
+  avatar?: string | null;
+}
+
+/** Serialized blog as returned by every blog endpoint */
+export interface BlogResponseDTO {
+  id: string;
+  userId: string;
+  title: string;
+  content: string;
+  description: string;
+  images?: string[] | null;
+  status: BlogStatus;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author?: BlogAuthorDTO; // present on list/detail responses
+  isBookmarked?: boolean; // last saved/unsaved state for the viewer
+}
+
+/** Writer statistics — GET /blogs/count */
+export interface BlogCountDTO {
+  published: number;
+  drafts: number;
+  total: number;
+}
+
+/** Result of a bookmark toggle */
+export interface BlogBookmarkDTO {
+  blogId: string;
+  isBookmarked: boolean;
+}
+
+/** Query params for list endpoints (GET /blogs, /blogs/drafts, ...) */
+export interface BlogListQueryDTO {
+  page?: number;
+  limit?: number;
 }

@@ -1,30 +1,62 @@
-import React, { useState } from "react";
-import { Bookmark, MoreHorizontal, Bell } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Bookmark,
+  MoreHorizontal,
+  Bell,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import type { Story } from "../../features/profile/types/story.types";
 
 interface StoryCardProps {
   story: Story;
   layout?: "grid" | "list";
   onBookmarkToggle?: (storyId: string, newState: boolean) => void;
+  /** Only wired for own blogs — opens the editor */
+  onEdit?: (storyId: string) => void;
+  /** Only wired for own blogs — fires after the confirm step */
+  onDelete?: (storyId: string) => void;
 }
 
 export const StoryCard: React.FC<StoryCardProps> = ({
   story,
   onBookmarkToggle,
+  onEdit,
+  onDelete,
 }) => {
+  const navigate = useNavigate();
   const [bookmarked, setBookmarked] = useState(Boolean(story.isBookmarked));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // close the menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setConfirmDelete(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
 
   const handleBookmark = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const nextState = !bookmarked;
     setBookmarked(nextState);
-    // if (nextState) {
-    //   setToastMessage("Saved to reading list");
-    //   setTimeout(() => setToastMessage(null), 2500);
-    // }
     onBookmarkToggle?.(story.id, nextState);
   };
+
+  // story cards route to the full blog page
+  const open = () => navigate(`/blog/${story.id}`);
+
+  const menuBtn =
+    "w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-[#5C625E] hover:bg-[#F0EDE4] hover:text-[#1B1F1C] transition-colors";
 
   const renderGraphicCover = () => {
     if (story.iconType === "letter" || story.id === "1" || story.id === "prof-1") {
@@ -84,11 +116,12 @@ export const StoryCard: React.FC<StoryCardProps> = ({
   };
 
   return (
-    <article className="group relative py-7 border-b border-[#E6E2D8] last:border-b-0 cursor-pointer">
-      {/* Toast Notification */}
-
+    <article
+      onClick={open}
+      className="group relative py-7 border-b border-[#E6E2D8] last:border-b-0 cursor-pointer"
+    >
+      {/* Left Column: Title, Excerpt, Metadata Badges & Read info */}
       <div className="flex items-start justify-between gap-6 sm:gap-10">
-        {/* Left Column: Title, Excerpt, Metadata Badges & Read info */}
         <div className="flex-1 min-w-0">
           <h2 className="font-editorial text-[20px] sm:text-[22px] font-bold text-[#1B1F1C] tracking-tight leading-[1.3] group-hover:text-[#1F3D2F] transition-colors">
             {story.title}
@@ -128,13 +161,100 @@ export const StoryCard: React.FC<StoryCardProps> = ({
                   }`}
                 />
               </button>
-              <button
-                type="button"
-                className="p-1 text-[#8A8F8B] hover:text-[#1B1F1C] transition-colors"
-                title="More options"
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
+
+              {/* 3-dots menu only on the viewer's own blogs */}
+              {story.isMine && (
+                <div
+                  className="relative"
+                  ref={menuRef}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen((v) => !v);
+                    }}
+                    className="p-1 text-[#8A8F8B] hover:text-[#1B1F1C] transition-colors"
+                    title="More options"
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </button>
+
+                  {menuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 mt-2 w-44 rounded-xl border border-[#E6E2D8] bg-white py-2 shadow-lg z-30 animate-fade-in"
+                    >
+                      {confirmDelete ? (
+                        <>
+                          <span className="block px-4 py-1.5 text-[12px] text-[#5C625E]">
+                            Delete this blog?
+                          </span>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMenuOpen(false);
+                              onDelete?.(story.id);
+                            }}
+                            className={`${menuBtn} text-[#ba1a1a] font-medium`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span>Delete</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDelete(false);
+                              setMenuOpen(false);
+                            }}
+                            className={menuBtn}
+                          >
+                            <span>Cancel</span>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMenuOpen(false);
+                              onEdit?.(story.id);
+                            }}
+                            className={menuBtn}
+                          >
+                            <Pencil className="w-4 h-4" />
+                            <span>Edit blog</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDelete(true);
+                            }}
+                            className={`${menuBtn} hover:text-[#ba1a1a]`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span>Delete blog</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
