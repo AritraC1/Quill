@@ -45,6 +45,33 @@ export interface UserProfileDTO {
   handleChangedAt?: string | null; // ISO date of the last handle change
   website?: string | null;
   favGenre: string[];
+  createdAt: string; // ISO — "member since" on the profile page
+}
+
+/** GET /user/:handle — any writer's public profile */
+export interface PublicProfileDTO {
+  id: string;
+  name: string;
+  bio?: string | null;
+  avatar?: string | null;
+  handle: string;
+  website?: string | null;
+  favGenre: string[];
+  createdAt: string;
+  followers: number;
+  isFollowing: boolean; // viewer state (every /user route requires auth)
+}
+
+/** POST /user/avatar — uploaded image, stored on disk, referenced by URL */
+export interface AvatarUploadDTO {
+  url: string; // "/uploads/<name>" — resolve against the API origin
+}
+
+/** Result of following / unfollowing a writer */
+export interface FollowResultDTO {
+  handle: string;
+  isFollowing: boolean;
+  followers: number;
 }
 
 // Onboarding a new user
@@ -56,6 +83,7 @@ export interface OnboardRequestDTO {
 
 // Edit profile
 export interface EditProfileDTO {
+  name?: string; // real display name (2–50 chars, server-validated)
   avatar?: string;
   bio?: string;
   favGenre: string[];
@@ -99,6 +127,7 @@ export interface BlogResponseDTO {
   images?: string[] | null;
   status: BlogStatus;
   publishedAt: string | null;
+  scheduledPublishAt?: string | null; // set while waiting for the publishing worker
   createdAt: string;
   updatedAt: string;
   author?: BlogAuthorDTO; // present on list/detail responses
@@ -112,6 +141,12 @@ export interface BlogCountDTO {
   total: number;
 }
 
+// Workflow body for POST /blogs/:id/publish
+// Omit publishAt for an instant publish; set it to schedule the release
+export interface PublishBlogDTO {
+  publishAt?: string; // ISO datetime, must be in the future
+}
+
 /** Result of a bookmark toggle */
 export interface BlogBookmarkDTO {
   blogId: string;
@@ -122,4 +157,6 @@ export interface BlogBookmarkDTO {
 export interface BlogListQueryDTO {
   page?: number;
   limit?: number;
+  /** Optional author handle — narrows the feed to one writer's published blogs */
+  author?: string;
 }

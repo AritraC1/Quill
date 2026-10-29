@@ -37,7 +37,11 @@ async function sendRequest<T>(
   const url = `${API_BASE_URL}${endpoint}`;
   const headers = new Headers(options.headers || {});
 
-  if (!headers.has("Content-Type") && options.body) {
+  // multipart uploads (FormData) must let fetch set the boundary itself
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+
+  if (!headers.has("Content-Type") && options.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -57,6 +61,20 @@ async function sendRequest<T>(
   }
 
   return data?.data ?? data;
+}
+
+// Origin the API runs on — used to resolve asset paths like /uploads/… that
+// the server returns (relative to its own origin, which differs in dev)
+export const API_ORIGIN = new URL(
+  API_BASE_URL,
+  window.location.origin,
+).origin;
+
+/** Full URL for server-issued relative asset paths (avatars, images) */
+export function assetUrl(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("data:") || /^[a-z]+:\/\//i.test(path)) return path;
+  return new URL(path, API_ORIGIN).href;
 }
 
 // Sign Up (Create Account)
@@ -168,4 +186,19 @@ export async function onboardApi(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+// Upload a profile picture as multipart/form-data (field "avatar")
+export async function uploadAvatarApi(blob: Blob): Promise<string> {
+  const form = new FormData();
+  form.append(
+    "avatar",
+    blob,
+    `avatar.${blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"}`,
+  );
+  const response = await sendRequest<{ url: string }>(API_ROUTES.USER.AVATAR, {
+    method: "POST",
+    body: form,
+  });
+  return response.url;
 }

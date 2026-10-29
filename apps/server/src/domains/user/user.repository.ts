@@ -99,14 +99,15 @@ class UserRepository {
     const query = `
     UPDATE users
     SET
-      avatar = COALESCE($2, avatar),
-      bio = COALESCE($3, bio),
-      fav_genre = COALESCE($4, fav_genre),
-      handle = COALESCE($5, handle),
-      website = COALESCE($6, website),
+      name = COALESCE($2, name),
+      avatar = COALESCE($3, avatar),
+      bio = COALESCE($4, bio),
+      fav_genre = COALESCE($5, fav_genre),
+      handle = COALESCE($6, handle),
+      website = COALESCE($7, website),
       -- the once-per-6-months clock only starts when the handle really changes
       handle_changed_at = CASE
-        WHEN $5 IS NOT NULL AND handle IS DISTINCT FROM $5 THEN NOW()
+        WHEN $6 IS NOT NULL AND handle IS DISTINCT FROM $6 THEN NOW()
         ELSE handle_changed_at
       END
     WHERE id = $1
@@ -115,6 +116,7 @@ class UserRepository {
 
     const result = await pool.query<UserModel>(query, [
       userId,
+      data.name ?? null,
       data.avatar ?? null,
       data.bio ?? null,
       data.favGenre ?? null,
@@ -123,6 +125,88 @@ class UserRepository {
     ]);
 
     return result.rows[0] ?? null;
+  }
+
+  // Delete a user
+  // ---------------- Social graph (migrations/010) ----------------
+
+  // Follow a user (idempotent)
+  async followUser(followerId: string, followingId: string): Promise<boolean> {
+    const query = `
+      INSERT INTO user_follows (follower_id, following_id)
+      VALUES ($1, $2)
+      ON CONFLICT (follower_id, following_id) DO NOTHING;
+    `;
+    await pool.query(query, [followerId, followingId]);
+    return true;
+  }
+
+  // Unfollow a user (no error when the follow row does not exist)
+  async unfollowUser(
+    followerId: string,
+    followingId: string,
+  ): Promise<boolean> {
+    const query = `
+      DELETE FROM user_follows WHERE follower_id = $1 AND following_id = $2;
+    `;
+    const result = await pool.query(query, [followerId, followingId]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Number of people who follow the given user
+  async countFollowers(userId: string): Promise<number> {
+    const query = `
+      SELECT COUNT(*)::INT AS count FROM user_follows WHERE following_id = $1;
+    `;
+    const result = await pool.query<{ count: number }>(query, [userId]);
+    return result.rows[0]?.count ?? 0;
+  }
+
+  // Handles the user follows — feeds the profile sidebar / follow state
+  async listFollowingIds(userId: string): Promise<string[]> {
+    const query = `
+      SELECT following_id FROM user_follows WHERE follower_id = $1;
+    `;
+    const result = await pool.query<{ following_id: string }>(query, [userId]);
+    return result.rows.map((row) => row.following_id);
+  }
+
+  // The users this user follows (profile "Following" sidebar)
+  async listFollowingUsers(
+    userId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+    }>
+  > {
+    const query = `
+      SELECT u.id, u.name, u.handle, u.avatar
+      FROM user_follows f
+      JOIN users u ON u.id = f.following_id
+      WHERE f.follower_id = $1
+      ORDER BY f.created_at DESC;
+    `;
+    const result = await pool.query<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+    }>(query, [userId]);
+    return result.rows;
+  }
+
+  // Is `followerId` currently following `followingId`?
+  async isFollowing(followerId: string, followingId: string): Promise<boolean> {
+    const query = `
+      SELECT 1 FROM user_follows
+      WHERE follower_id = $1 AND following_id = $2
+      LIMIT 1;
+    `;
+    const result = await pool.query(query, [followerId, followingId]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Delete a user

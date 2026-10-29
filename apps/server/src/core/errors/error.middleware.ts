@@ -9,6 +9,23 @@ export const errorHandler = (
   res: Response,
   next: NextFunction,
 ): void => {
+  // Body-parser failures (e.g. JSON over the configured size limit) arrive as
+  // generic errors with a `type` — surface them as friendly 413/400s
+  if (err instanceof SyntaxError && "body" in err) {
+    res.status(400).json({ success: false, message: "Malformed JSON body" });
+    return;
+  }
+  
+  if (err instanceof Error && "statusCode" in err && !Number.isNaN(err.statusCode)) {
+    const status = (err as Error & { statusCode: number }).statusCode;
+    if (status === 413) {
+      res
+        .status(413)
+        .json({ success: false, message: "Request too large (max 2 MB JSON)" });
+      return;
+    }
+  }
+
   // Handle known operational errors defined by the AppError class
   // Examples include 400 Bad Request, 404 Not Found, and 409 Conflict
   if (err instanceof AppError) {

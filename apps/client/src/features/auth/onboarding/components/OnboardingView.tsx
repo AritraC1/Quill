@@ -2,7 +2,7 @@ import { useState, useRef, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Camera, Check, Sparkles, ArrowRight, Loader2, BookOpen, PenTool } from "lucide-react";
 import type { GenreOption } from "../types/onboarding.types";
-import { onboardApi } from "../../api/auth.api";
+import { onboardApi, uploadAvatarApi } from "../../api/auth.api";
 
 
 const GENRES: GenreOption[] = [
@@ -21,6 +21,7 @@ export const OnboardingView = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [bio, setBio] = useState("");
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,6 +45,7 @@ export const OnboardingView = () => {
     const reader = new FileReader();
     reader.onload = () => {
       setAvatarPreview(reader.result as string);
+      setAvatarFile(file); // kept for the server-side upload on submit
     };
     reader.readAsDataURL(file);
   };
@@ -69,8 +71,19 @@ export const OnboardingView = () => {
     try {
       // Best-effort sync to the backend (cookies ride along automatically);
       // failures are tolerated — local copy below still completes onboarding
+      // The avatar goes through the real upload endpoint so the DB stores a
+      // URL on disk, not a base64 blob
+      let avatarUrl: string | undefined;
+      if (avatarFile) {
+        try {
+          avatarUrl = await uploadAvatarApi(avatarFile);
+        } catch (uploadError) {
+          console.warn("Avatar upload failed:", uploadError);
+        }
+      }
+
       await onboardApi({
-        avatar: avatarPreview || undefined,
+        avatar: avatarUrl,
         bio: bio.trim() || undefined,
         favGenre: selectedGenres,
       }).catch((err) => {

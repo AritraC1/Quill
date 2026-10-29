@@ -61,7 +61,7 @@ export const StoryCard: React.FC<StoryCardProps> = ({
   const renderGraphicCover = () => {
     if (story.iconType === "letter" || story.id === "1" || story.id === "prof-1") {
       return (
-        <div className="w-[124px] h-[86px] rounded-lg bg-[#3F5B4B] flex items-center justify-center shrink-0 shadow-sm">
+        <div className="w-31 h-21.5 rounded-lg bg-[#3F5B4B] flex items-center justify-center shrink-0 shadow-sm">
           <span className="font-editorial text-4xl text-[#A8D5BA] font-light select-none">
             T
           </span>
@@ -70,7 +70,7 @@ export const StoryCard: React.FC<StoryCardProps> = ({
     }
     if (story.iconType === "quill" || story.id === "2" || story.id === "prof-2") {
       return (
-        <div className="w-[124px] h-[86px] rounded-lg bg-[#967046] flex items-center justify-center shrink-0 shadow-sm">
+        <div className="w-31 h-21.5 rounded-lg bg-[#967046] flex items-center justify-center shrink-0 shadow-sm">
           {/* Stylized quill stroke icon */}
           <svg
             className="w-8 h-8 text-[#EAD9C2]"
@@ -90,7 +90,7 @@ export const StoryCard: React.FC<StoryCardProps> = ({
     }
     if (story.iconType === "bell" || story.id === "3" || story.id === "prof-3") {
       return (
-        <div className="w-[124px] h-[86px] rounded-lg bg-[#4E5B6E] flex items-center justify-center shrink-0 shadow-sm">
+        <div className="w-31 h-21.5 rounded-lg bg-[#4E5B6E] flex items-center justify-center shrink-0 shadow-sm">
           <Bell className="w-8 h-8 text-[#D1D9E6] stroke-[1.5]" />
         </div>
       );
@@ -101,13 +101,13 @@ export const StoryCard: React.FC<StoryCardProps> = ({
         <img
           src={story.imageUrl}
           alt={story.title}
-          className="w-[124px] h-[86px] rounded-lg object-cover shrink-0"
+          className="w-31 h-21.5 rounded-lg object-cover shrink-0"
         />
       );
     }
 
     return (
-      <div className="w-[124px] h-[86px] rounded-lg bg-[#F0EDE4] flex items-center justify-center shrink-0">
+      <div className="w-31 h-21.5 rounded-lg bg-[#F0EDE4] flex items-center justify-center shrink-0">
         <span className="font-newsreader text-sm text-[#5C625E]">
           {story.topic}
         </span>
@@ -127,7 +127,7 @@ export const StoryCard: React.FC<StoryCardProps> = ({
             {story.title}
           </h2>
 
-          <p className="mt-2 text-[14px] sm:text-[15px] leading-[22px] sm:leading-[24px] text-[#5C625E] line-clamp-2">
+          <p className="mt-2 text-[14px] sm:text-[15px] leading-5.5 sm:leading-6 text-[#5C625E] line-clamp-2">
             {story.excerpt}
           </p>
 

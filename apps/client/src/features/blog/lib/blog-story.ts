@@ -5,6 +5,7 @@ import {
   readTimeMinutes,
   wordCount,
 } from "./markdown";
+import { assetUrl } from "../../auth/api/auth.api";
 
 const MAX_EXCERPT = 180;
 
@@ -33,7 +34,8 @@ export function blogToStory(blog: BlogResponseDTO, ownHandle?: string): Story {
     author: {
       name: blog.author?.name ?? "Unknown author",
       handle: handle ? "@" + handle : undefined,
-      avatar: blog.author?.avatar ?? undefined,
+      // server paths like /uploads/… are resolved against the API origin
+      avatar: assetUrl(blog.author?.avatar),
     },
     topic: "Writing",
     readTime: `${readTimeMinutes(words)} min read`,
@@ -54,6 +56,7 @@ export function blogToDraft(blog: BlogResponseDTO): {
   excerpt: string;
   updatedAt: string;
   words: number;
+  scheduledAt?: string;
 } {
   const body = markdownToPlainText(blog.content);
   return {
@@ -62,5 +65,6 @@ export function blogToDraft(blog: BlogResponseDTO): {
     excerpt: (blog.description || body || "Empty draft").slice(0, MAX_EXCERPT),
     updatedAt: blog.updatedAt,
     words: wordCount(blog.content),
+    scheduledAt: blog.scheduledPublishAt ?? undefined,
   };
 }

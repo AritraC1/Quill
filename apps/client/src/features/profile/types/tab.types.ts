@@ -1,1 +1,1 @@
-export type Tab = "stories" | "drafts" | "saved" | "about";
+export type Tab = "stories" | "drafts" | "saved";

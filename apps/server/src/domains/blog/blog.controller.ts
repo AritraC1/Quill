@@ -5,6 +5,12 @@ import type {
   UpdateBlogDTO,
 } from "@quill/shared";
 import BlogService from "./blog.service";
+import {
+  parseBody,
+  createBlogSchema,
+  updateBlogSchema,
+  publishBlogSchema,
+} from "../../core/validation/validation";
 
 class BlogController {
   private blogService: BlogService;
@@ -21,7 +27,7 @@ class BlogController {
   ): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const data: CreateBlogDTO = req.body;
+      const data: CreateBlogDTO = parseBody(createBlogSchema, req.body);
       const result = await this.blogService.createDraft(userId, data);
 
       res.status(201).json({
@@ -41,9 +47,11 @@ class BlogController {
   ): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const query: BlogListQueryDTO = {
+      const query: BlogListQueryDTO & { author?: string } = {
         page: Number(req.query.page) || undefined,
         limit: Number(req.query.limit) || undefined,
+        author:
+          typeof req.query.author === "string" ? req.query.author : undefined,
       };
       const result = await this.blogService.listFeed(userId, query);
 
@@ -152,7 +160,10 @@ class BlogController {
   ): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const result = await this.blogService.getBlog(userId, String(req.params.id));
+      const result = await this.blogService.getBlog(
+        userId,
+        String(req.params.id),
+      );
 
       res.status(200).json({
         success: true,
@@ -171,7 +182,7 @@ class BlogController {
   ): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const data: UpdateBlogDTO = req.body;
+      const data: UpdateBlogDTO = parseBody(updateBlogSchema, req.body);
       const result = await this.blogService.updateBlog(
         userId,
         String(req.params.id),
@@ -207,6 +218,7 @@ class BlogController {
   };
 
   // Publish a draft — POST /blogs/:id/publish
+  // Body: {} (instant) or { publishAt: ISO } (scheduled — handled by the worker)
   publishBlog = async (
     req: Request,
     res: Response,
@@ -214,7 +226,35 @@ class BlogController {
   ): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const result = await this.blogService.publishBlog(userId, String(req.params.id));
+      const meta = parseBody(publishBlogSchema, req.body ?? {});
+      const publishAt = meta.publishAt;
+      const result = await this.blogService.publishBlog(
+        userId,
+        String(req.params.id),
+        publishAt,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Cancel a scheduled publish — DELETE /blogs/:id/schedule
+  cancelSchedule = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const result = await this.blogService.cancelSchedule(
+        userId,
+        String(req.params.id),
+      );
 
       res.status(200).json({
         success: true,

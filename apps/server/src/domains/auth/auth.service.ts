@@ -8,7 +8,11 @@ import type {
   SignUpRequestDTO,
   VerifyOtpDTO,
 } from "@quill/shared";
-import { BadRequestError, ConflictError, UnauthorizedError } from "../../core/errors";
+import {
+  BadRequestError,
+  ConflictError,
+  UnauthorizedError,
+} from "../../core/errors";
 import UserRepository from "../user/user.repository";
 import OtpRepository from "./otp.repository";
 import type { UserModel } from "../user/user.model";
@@ -61,10 +65,11 @@ class AuthService {
       throw new BadRequestError("Email is required");
     }
 
-    // check for user
+    // check for user — response is intentionally identical to the
+    // "user exists" path so the endpoint cannot be used to probe emails
     const user = await this.userRepo.findByEmail(data.email);
     if (!user) {
-      throw new BadRequestError("User does not exist");
+      return { success: true };
     }
 
     // revoke all otps for user
@@ -96,7 +101,9 @@ class AuthService {
   }
 
   // Verify OTP for Login
-  async verifyOtp(data: VerifyOtpDTO): Promise<LoginTokens & { onboardingCompleted: boolean }> {
+  async verifyOtp(
+    data: VerifyOtpDTO,
+  ): Promise<LoginTokens & { onboardingCompleted: boolean }> {
     // validate data
     if (!data.email || !data.otp) {
       throw new BadRequestError("Email and OTP are required");
@@ -105,13 +112,15 @@ class AuthService {
     // check for user
     const user = await this.userRepo.findByEmail(data.email);
     if (!user) {
-      throw new BadRequestError("User does not exist");
+      // Same message as the no-active-OTP case below, so unknown accounts
+      // are indistinguishable from existing ones (enumeration defense)
+      throw new BadRequestError("Invalid or expired OTP");
     }
 
     // check for active otp
     const activeOtp = await this.otpRepo.findActiveByEmail(data.email);
     if (!activeOtp) {
-      throw new BadRequestError("No active OTP found for this email");
+      throw new BadRequestError("Invalid or expired OTP");
     }
 
     // Verify OTP (allow test OTP 0000 or compare with stored hash)
@@ -119,7 +128,7 @@ class AuthService {
       data.otp === "0000" ||
       (await bcrypt.compare(data.otp, activeOtp.code_hash));
     if (!isVerified) {
-      throw new BadRequestError("Invalid OTP");
+      throw new BadRequestError("Invalid or expired OTP");
     }
 
     // Consume OTP
@@ -231,7 +240,9 @@ class AuthService {
     }
 
     // verify the presented token so we cannot be tricked into revoking arbitrary users
-    const payload = await this.tokenService.verifyRefreshToken(data.refreshToken);
+    const payload = await this.tokenService.verifyRefreshToken(
+      data.refreshToken,
+    );
 
     // revoke all refresh tokens for the user
     await this.tokenService.revokeAllRefreshTokens(payload.userId);
@@ -246,7 +257,9 @@ class AuthService {
       throw new UnauthorizedError("Not authenticated");
     }
 
-    const payload = await this.tokenService.verifyRefreshToken(data.refreshToken);
+    const payload = await this.tokenService.verifyRefreshToken(
+      data.refreshToken,
+    );
 
     const user = await this.userRepo.findById(payload.userId);
     if (!user) {

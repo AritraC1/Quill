@@ -14,17 +14,37 @@ import {
   clearCookieOptions,
   refreshCookieOptions,
 } from "../../core/config/cookie.config";
+import {
+  parseBody,
+  requestOtpSchema,
+  signUpSchema,
+  verifyOtpSchema,
+} from "../../core/validation/validation";
 
 /** Issues the token pair as httpOnly cookies and strips the tokens from the JSON body */
 const issueCookies = (res: Response, tokens: LoginTokens): void => {
-  res.cookie(AUTH_COOKIES.access.name, tokens.accessToken, accessCookieOptions());
-  res.cookie(AUTH_COOKIES.refresh.name, tokens.refreshToken, refreshCookieOptions());
+  res.cookie(
+    AUTH_COOKIES.access.name,
+    tokens.accessToken,
+    accessCookieOptions(),
+  );
+  res.cookie(
+    AUTH_COOKIES.refresh.name,
+    tokens.refreshToken,
+    refreshCookieOptions(),
+  );
 };
 
 /** Deletes both auth cookies (paths must match how they were set) */
 const clearCookies = (res: Response): void => {
-  res.clearCookie(AUTH_COOKIES.access.name, clearCookieOptions(AUTH_COOKIES.access.path));
-  res.clearCookie(AUTH_COOKIES.refresh.name, clearCookieOptions(AUTH_COOKIES.refresh.path));
+  res.clearCookie(
+    AUTH_COOKIES.access.name,
+    clearCookieOptions(AUTH_COOKIES.access.path),
+  );
+  res.clearCookie(
+    AUTH_COOKIES.refresh.name,
+    clearCookieOptions(AUTH_COOKIES.refresh.path),
+  );
 };
 
 class AuthController {
@@ -42,7 +62,7 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> => {
     try {
-      const data: SignUpRequestDTO = req.body;
+      const data: SignUpRequestDTO = parseBody(signUpSchema, req.body);
       const result = await this.authService.createAccount(data);
       res.status(201).json({
         success: true,
@@ -61,7 +81,7 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> => {
     try {
-      const data: RequestOtpDTO = req.body;
+      const data: RequestOtpDTO = parseBody(requestOtpSchema, req.body);
       const result = await this.authService.requestOTP(data);
 
       res.status(200).json({
@@ -80,7 +100,7 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> => {
     try {
-      const data: VerifyOtpDTO = req.body;
+      const data: VerifyOtpDTO = parseBody(verifyOtpSchema, req.body);
       const { accessToken, refreshToken, onboardingCompleted } =
         await this.authService.verifyOtp(data);
 
@@ -102,13 +122,13 @@ class AuthController {
     next: NextFunction,
   ): Promise<void> => {
     try {
-      const cookieToken =
-        req.cookies?.[AUTH_COOKIES.refresh.name] ?? undefined;
+      const cookieToken = req.cookies?.[AUTH_COOKIES.refresh.name] ?? undefined;
       const data: RefreshTokenDTO = {
         refreshToken: cookieToken ?? req.body?.refreshToken,
       };
 
-      const { accessToken, refreshToken } = await this.authService.refreshToken(data);
+      const { accessToken, refreshToken } =
+        await this.authService.refreshToken(data);
 
       // The old pair (including the presented refresh cookie) is revoked by the service
       issueCookies(res, { accessToken, refreshToken });

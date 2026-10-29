@@ -22,6 +22,7 @@ router.delete("/:id", requireAuth, blogController.deleteBlog);
 
 // Workflow
 router.post("/:id/publish", requireAuth, blogController.publishBlog);
+router.delete("/:id/schedule", requireAuth, blogController.cancelSchedule);
 router.post("/:id/bookmark", requireAuth, blogController.addBookmark);
 router.delete("/:id/bookmark", requireAuth, blogController.removeBookmark);
 

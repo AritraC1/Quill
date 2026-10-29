@@ -1,7 +1,16 @@
-import type { EditProfileDTO, UserProfileDTO } from "@quill/shared";
+import type {
+  EditProfileDTO,
+  FollowResultDTO,
+  PublicProfileDTO,
+  UserProfileDTO,
+} from "@quill/shared";
 import UserRepository from "./user.repository";
 import type { UserModel } from "./user.model";
-import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} from "../../core/errors";
 
 // System-generated handles look like "julianvance328641"; edits follow
 // the same shape (3–30 chars, lowercase letters/numbers/underscore/hyphen)
@@ -9,6 +18,30 @@ const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{2,29}$/;
 
 // The handle starts its 6-month lock clock after every change
 const HANDLE_LOCK_MONTHS = 6;
+
+// Handles that would be shadowed by static routes (/feed, /write, ...) and
+// therefore unreachable — same list the client router treats as reserved
+const RESERVED_HANDLES = new Set([
+  "api",
+  "docs",
+  "auth",
+  "user",
+  "blogs",
+  "uploads",
+  "status",
+  "onboarding",
+  "feed",
+  "profile",
+  "write",
+  "blog",
+  "settings",
+  "about",
+  "login",
+  "signup",
+  "admin",
+  "me",
+  "topic",
+]);
 
 class UserService {
   private userRepo: UserRepository;
@@ -26,7 +59,7 @@ class UserService {
     }
 
     // `website` is written only via edit-profile; nullable until then
-    const website = (user as UserModel & { website?: string }).website ?? null;
+    const website = user.website ?? null;
 
     return {
       id: user.id,
@@ -39,6 +72,7 @@ class UserService {
         : null,
       website,
       favGenre: user.fav_genre ?? [],
+      createdAt: new Date(user.created_at).toISOString(),
     };
   }
 
@@ -52,14 +86,29 @@ class UserService {
       throw new BadRequestError("User not found");
     }
 
+    // Name edits: trimmed, 2–50 characters (same rules the client enforces)
+    if (data.name !== undefined) {
+      const name = data.name.trim();
+
+      if (name.length < 2 || name.length > 50) {
+        throw new BadRequestError("Name must be 2–50 characters");
+      }
+
+      data.name = name;
+    }
+
     // Handle edits: normalized, shape-checked, unique, 1×/6 months
     if (data.handle !== undefined) {
       const handle = data.handle.trim().toLowerCase();
 
-      if (!HANDLE_PATTERN.test(handle)) {
+      if (!handle || !HANDLE_PATTERN.test(handle)) {
         throw new BadRequestError(
           "Handles are 3–30 characters: lowercase letters, numbers, underscores and hyphens",
         );
+      }
+
+      if (RESERVED_HANDLES.has(handle)) {
+        throw new BadRequestError("That handle is reserved");
       }
 
       if (handle !== user.handle) {
@@ -98,6 +147,90 @@ class UserService {
     }
 
     return updatedUser;
+  }
+
+  // Any writer's public profile — no email or internal flags leak out
+  async getProfileByHandle(
+    viewerId: string,
+    handle: string,
+  ): Promise<PublicProfileDTO> {
+    const target = await this.userRepo.findByHandle(
+      handle.trim().toLowerCase(),
+    );
+    if (!target) {
+      throw new NotFoundError("User not found");
+    }
+
+    const [followers, isFollowing] = await Promise.all([
+      this.userRepo.countFollowers(target.id),
+      this.userRepo.isFollowing(viewerId, target.id),
+    ]);
+
+    return {
+      id: target.id,
+      name: target.name,
+      bio: target.bio ?? null,
+      avatar: target.avatar ?? null,
+      handle: target.handle ?? handle,
+      website: target.website ?? null,
+      favGenre: target.fav_genre ?? [],
+      createdAt: new Date(target.created_at).toISOString(),
+      followers,
+      isFollowing,
+    };
+  }
+
+  // Follow a writer by handle
+  async followUser(
+    followerId: string,
+    handle: string,
+  ): Promise<FollowResultDTO> {
+    const target = await this.userRepo.findByHandle(
+      handle.trim().toLowerCase(),
+    );
+    if (!target) {
+      throw new NotFoundError("User not found");
+    }
+    if (target.id === followerId) {
+      throw new BadRequestError("You cannot follow yourself");
+    }
+
+    await this.userRepo.followUser(followerId, target.id);
+    const followers = await this.userRepo.countFollowers(target.id);
+
+    return { handle: target.handle ?? handle, isFollowing: true, followers };
+  }
+
+  // Unfollow a writer by handle
+  async unfollowUser(
+    followerId: string,
+    handle: string,
+  ): Promise<FollowResultDTO> {
+    const target = await this.userRepo.findByHandle(
+      handle.trim().toLowerCase(),
+    );
+    if (!target) {
+      throw new NotFoundError("User not found");
+    }
+
+    await this.userRepo.unfollowUser(followerId, target.id);
+    const followers = await this.userRepo.countFollowers(target.id);
+
+    return { handle: target.handle ?? handle, isFollowing: false, followers };
+  }
+
+  // The people a user follows (profile sidebar)
+  async listFollowing(
+    userId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+    }>
+  > {
+    return this.userRepo.listFollowingUsers(userId);
   }
 }
 

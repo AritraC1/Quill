@@ -6,6 +6,7 @@ export interface UserModel {
   email: string;
   avatar?: string | null;
   bio?: string | null;
+  website?: string | null;
   fav_genre: string[] | null;
   onboarding_completed: boolean;
   handle: string | null;

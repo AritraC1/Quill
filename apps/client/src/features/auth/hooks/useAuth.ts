@@ -12,6 +12,7 @@ import {
   clearStoredUser,
   saveStoredUser,
 } from "../../../lib/user-store";
+import { clearMeCache } from "../../profile/api/profile.api";
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;
@@ -133,8 +134,12 @@ export function useAuth() {
       await logoutApi();
       setSession(SIGNED_OUT);
       clearStoredUser();
+      clearMeCache();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, "Logout failed"));
+      setError(err instanceof Error && err.message ? err.message : "Logout failed");
+      // Even on API failure the local identity should not survive
+      clearStoredUser();
+      clearMeCache();
     } finally {
       setIsLoading(false);
     }

@@ -4,7 +4,7 @@ import { AUTHORS } from "./mockProfiles";
 export type FeedStory = Story & { age: number }; // age = days old, used for "Latest"
 
 const by = (h: string, avatar?: string) => ({
-  name: AUTHORS[h].name,
+  name: AUTHORS[h]?.name ?? h,
   handle: `@${h}`,
   ...(avatar ? { avatar } : {}),
 });

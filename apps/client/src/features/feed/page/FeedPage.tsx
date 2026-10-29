@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Sparkles, Users, Loader2 } from "lucide-react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { StoryCard } from "../../../components/ui/StoryCard";
@@ -23,6 +23,9 @@ import Empty from "../components/Empty";
 import FollowButton from "../components/FollowButton";
 
 const PAGE_SIZE = 5;
+// Server-side feed page size — the feed previously fetched exactly one page
+// of 20 and never again, hard-capping every reader's feed
+const FEED_PAGE_SIZE = 20;
 
 const TOPICS = [
   "All",
@@ -45,7 +48,10 @@ const FeedPage = () => {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("for-you");
   const [topic, setTopic] = useState("All");
-  const [searchQuery, setSearchQuery] = useState("");
+  // Live filter state — seeded from `?q=` so a search submitted from another
+  // page's navbar ("Enter" jumps to /feed?q=…) opens pre-filtered
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
   const [shown, setShown] = useState(PAGE_SIZE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -58,20 +64,59 @@ const FeedPage = () => {
 
   // Published blogs from the API, newest first (mock stories follow below)
   const [feedBlogs, setFeedBlogs] = useState<BlogResponseDTO[]>([]);
+  // Real pagination state: how deep into the server feed we are and how many
+  // published blogs exist in total (null = API unreachable → mock fallback)
+  const [feedPage, setFeedPage] = useState(1);
+  const [feedTotal, setFeedTotal] = useState<number | null>(null);
+  const [serverDown, setServerDown] = useState(false);
+
+  const fetchFeedPage = useCallback(
+    async (
+      targetPage: number,
+    ): Promise<{ items: BlogResponseDTO[]; total: number } | null> => {
+      try {
+        const res = await listFeedApi(targetPage, FEED_PAGE_SIZE);
+        return res;
+      } catch {
+        // the feed still shows local stories when the API is unreachable
+        return null;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
-    listFeedApi(1, 20)
-      .then((res) => {
-        if (!cancelled) setFeedBlogs(res.items);
-      })
-      .catch(() => {
-        /* the feed still shows local stories when the API is unreachable */
-      });
+    fetchFeedPage(1).then((res) => {
+      if (cancelled) return;
+      if (res) {
+        setFeedBlogs(res.items);
+        setFeedTotal(res.total);
+        setServerDown(false);
+      } else {
+        setServerDown(true);
+      }
+    });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchFeedPage]);
+
+  // Append the next server page (driven by the infinite-scroll sentinel)
+  const loadMoreServer = useCallback(async () => {
+    if (serverDown || feedTotal === null) return;
+    const nextPage = feedPage + 1;
+    if (feedPage * FEED_PAGE_SIZE >= feedTotal) return; // exhausted
+
+    const res = await fetchFeedPage(nextPage);
+    if (res) {
+      setFeedBlogs((prev) => [...prev, ...res.items]);
+      setFeedTotal(res.total);
+      setFeedPage(nextPage);
+    } else {
+      setServerDown(true); // midway outage — stop calling the server
+    }
+  }, [feedPage, feedTotal, serverDown, fetchFeedPage]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -102,20 +147,23 @@ const FeedPage = () => {
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
+    // Server feed first; mock stories only appear when the API never answered
     let list: Story[] = [
       ...feedBlogs.map((b) => blogToStory(b, ownHandle)),
-      ...STORIES.map((s) => ({
-        ...s,
-        isBookmarked: bookmarks.items.includes(s.id),
-        author:
-          s.author.handle === `@${CURRENT_USER_HANDLE}`
-            ? {
-                ...s.author,
-                name: own.profile.name,
-                avatar: own.profile.avatarUrl ?? s.author.avatar,
-              }
-            : s.author,
-      })),
+      ...(serverDown
+        ? STORIES.map((s) => ({
+            ...s,
+            isBookmarked: bookmarks.items.includes(s.id),
+            author:
+              s.author.handle === `@${CURRENT_USER_HANDLE}`
+                ? {
+                    ...s.author,
+                    name: own.profile.name,
+                    avatar: own.profile.avatarUrl ?? s.author.avatar,
+                  }
+                : s.author,
+          }))
+        : []),
     ];
 
     if (tab === "following")
@@ -143,30 +191,44 @@ const FeedPage = () => {
     following.items,
     own.profile.name,
     own.profile.avatarUrl,
+    serverDown,
   ]);
 
   const page = visible.slice(0, shown);
 
-  const hasMore = shown < visible.length;
+  // More server pages exist, or (fallback mode) more local mock stories
+  const hasMore = feedTotal
+    ? feedPage * FEED_PAGE_SIZE < feedTotal
+    : serverDown
+      ? shown < visible.length
+      : false;
 
-  // Infinite scroll
+  // Infinite scroll — fetches the next server page (mock mode keeps the
+  // local slice behaviour so the UI degrades gracefully when the API is down)
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasMore || isLoadingMore) return;
     const io = new IntersectionObserver(
       ([entry]) => {
-        if (!entry.isIntersecting) return;
+        if (!entry?.isIntersecting) return;
         setIsLoadingMore(true);
-        loadTimer.current = setTimeout(() => {
-          setShown((n) => n + PAGE_SIZE); // TODO: replace with a real paginated fetch
-          setIsLoadingMore(false);
-        }, 500);
+        if (serverDown || feedTotal === null) {
+          // API unreachable: local slicing keeps scroll working
+          loadTimer.current = setTimeout(() => {
+            setShown((n) => n + PAGE_SIZE);
+            setIsLoadingMore(false);
+          }, 500);
+        } else {
+          loadMoreServer().finally(() => {
+            loadTimer.current = setTimeout(() => setIsLoadingMore(false), 500);
+          });
+        }
       },
       { rootMargin: "200px" },
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [hasMore, isLoadingMore]);
+  }, [hasMore, isLoadingMore, loadMoreServer, serverDown, feedTotal]);
 
   const changeTab = (t: Tab) => {
     setTab(t);
@@ -180,6 +242,11 @@ const FeedPage = () => {
 
   const changeSearch = (v: string) => {
     setSearchQuery(v);
+    // Keep `?q=` in the URL so a refresh or revisit re-applies the filter
+    const next = new URLSearchParams(searchParams);
+    if (v) next.set("q", v);
+    else next.delete("q");
+    setSearchParams(next, { replace: true });
     setShown(PAGE_SIZE);
   };
 
@@ -187,9 +254,7 @@ const FeedPage = () => {
     // Server-backed blogs go through the API; mock stories stay local
     if (isServerBlogId(storyId)) {
       setFeedBlogs((prev) =>
-        prev.map((b) =>
-          b.id === storyId ? { ...b, isBookmarked: next } : b,
-        ),
+        prev.map((b) => (b.id === storyId ? { ...b, isBookmarked: next } : b)),
       );
       bookmarkBlogApi(storyId, next)
         .then(() =>
@@ -224,8 +289,8 @@ const FeedPage = () => {
     following.set(handle, on);
     showToast(
       on
-        ? `Following ${AUTHORS[handle].name}`
-        : `Unfollowed ${AUTHORS[handle].name}`,
+        ? `Following ${AUTHORS[handle]?.name ?? handle}`
+        : `Unfollowed ${AUTHORS[handle]?.name ?? handle}`,
     );
   };
 
@@ -366,10 +431,11 @@ const FeedPage = () => {
               <ul className="space-y-3">
                 {suggestions.map((h) => {
                   const a = AUTHORS[h];
+                  if (!a) return null;
                   return (
                     <li key={h} className="flex items-center gap-3">
                       <Link
-                        to={`/u/${h}`}
+                        to={`/${h}`}
                         className="flex min-w-0 flex-1 items-center gap-3"
                       >
                         <span
@@ -429,7 +495,7 @@ const FeedPage = () => {
                     {s.title}
                   </p>
                   <Link
-                    to={`/u/${s.author.handle!.slice(1)}`}
+                    to={`/${s.author.handle!.slice(1)}`}
                     className="text-[12px] text-[#8A8F8B] hover:text-[#1F3D2F]"
                   >
                     {s.author.name}

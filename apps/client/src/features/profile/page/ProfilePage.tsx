@@ -1,27 +1,32 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import type { BlogCountDTO } from "@quill/shared";
+import type { BlogCountDTO, PublicProfileDTO } from "@quill/shared";
 import { AppShell } from "../../../components/layout/AppShell";
 import { StoryCard } from "../../../components/ui/StoryCard";
 import { useStoredSet } from "../../../hooks/useStoredSet";
 import {
-  ALL_STORIES,
-  AUTHORS,
-  CURRENT_USER_HANDLE,
   DEFAULT_SAVED,
   DEFAULT_FOLLOWING,
+  type Author,
   type Draft,
 } from "../../../data/mockProfiles";
 import {
   blogCountApi,
   bookmarkBlogApi,
   deleteBlogApi,
+  listAuthorBlogsApi,
   listBookmarksApi,
   listDraftsApi,
   listMyPublishedApi,
 } from "../../blog/api/blog.api";
+import {
+  getProfileByHandleApi,
+  listFollowingApi,
+  setFollowApi,
+} from "../api/profile.api";
+import { assetUrl } from "../../auth/api/auth.api";
 import { blogToDraft, blogToStory, isServerBlogId } from "../../blog/lib/blog-story";
 import type { BlogResponseDTO } from "@quill/shared";
 import type { Story } from "../types/story.types";
@@ -35,24 +40,20 @@ const OWN_TABS: { id: Tab; label: string }[] = [
   { id: "stories", label: "Stories" },
   { id: "drafts", label: "Drafts" },
   { id: "saved", label: "Saved" },
-  { id: "about", label: "About" },
 ];
 
-const VISITOR_TABS = OWN_TABS.filter(
-  (t) => t.id === "stories" || t.id === "about",
-);
+const VISITOR_TABS = OWN_TABS.filter((t) => t.id === "stories");
 
 const ProfileView = () => {
   const { handle } = useParams<{ handle?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const own = useOwnProfile();
+  const { profile: own, loading } = useOwnProfile();
 
-  // Own profile: the real (server-generated) handle; visitors come via /u/:handle
-  const ownHandle = own.profile.handle ?? CURRENT_USER_HANDLE;
+  // Own profile: the real (server-generated) handle; visitors come via /<handle>
+  const ownHandle = own.handle;
   const navigate = useNavigate();
   const isOwn = handle === undefined || handle === ownHandle;
   const profileHandle = isOwn ? ownHandle : handle ?? ownHandle;
-  const author = isOwn ? own.profile : AUTHORS[profileHandle];
 
   const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
   const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
@@ -66,11 +67,44 @@ const ProfileView = () => {
   const setTab = (t: Tab) =>
     setSearchParams(t === "stories" ? {} : { tab: t }, { replace: true });
 
-  // ---- Blogs from the API (own profile only; visitors still see mock data) ----
+  // ---- Blogs from the API ----
   const [ownBlogDtos, setOwnBlogDtos] = useState<BlogResponseDTO[]>([]);
+  const [ownBlogsTotal, setOwnBlogsTotal] = useState(0);
   const [serverDrafts, setServerDrafts] = useState<Draft[]>([]);
   const [savedBlogDtos, setSavedBlogDtos] = useState<BlogResponseDTO[]>([]);
   const [blogCount, setBlogCount] = useState<BlogCountDTO | null>(null);
+  const [followingUsers, setFollowingUsers] = useState<
+    Array<{ id: string; name: string; handle: string | null; avatar: string | null }>
+  >([]);
+
+  // ---- Visitor profile via the API (was mock AUTHORS data) ----
+  const [visitorProfile, setVisitorProfile] = useState<PublicProfileDTO | null>(
+    null,
+  );
+  const [visitorNotFound, setVisitorNotFound] = useState(false);
+  const [visitorBlogDtos, setVisitorBlogDtos] = useState<BlogResponseDTO[]>([]);
+  const [visitorBlogsTotal, setVisitorBlogsTotal] = useState(0);
+  const [profilePage, setProfilePage] = useState(1);
+
+  // Server profile for visitors → same shape the own-profile hook produces
+  const visitorAuthor: Author | null = visitorProfile
+    ? {
+        name: visitorProfile.name,
+        handle: visitorProfile.handle,
+        bio: visitorProfile.bio ?? "",
+        followers: visitorProfile.followers,
+        following: 0,
+        website: visitorProfile.website ?? undefined,
+        avatarUrl: visitorProfile.avatar ?? undefined,
+        topics: visitorProfile.favGenre,
+        color: "bg-[#B27D56]",
+        joined: new Date(visitorProfile.createdAt).toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        }),
+      }
+    : null;
+  const author = isOwn ? own : visitorAuthor;
 
   useEffect(() => {
     if (!isOwn) return;
@@ -84,7 +118,11 @@ const ProfileView = () => {
       .catch(() => {});
     listMyPublishedApi()
       .then((res) => {
-        if (!cancelled) setOwnBlogDtos(res.items);
+        if (!cancelled) {
+          setOwnBlogDtos(res.items);
+          setOwnBlogsTotal(res.total);
+          setProfilePage(1);
+        }
       })
       .catch(() => {});
     listDraftsApi()
@@ -97,53 +135,119 @@ const ProfileView = () => {
         if (!cancelled) setSavedBlogDtos(res.items);
       })
       .catch(() => {});
+    // Real data for the "Following" sidebar (was mock AUTHORS lookups)
+    listFollowingApi()
+      .then((users) => {
+        if (!cancelled) setFollowingUsers(users);
+      })
+      .catch(() => {});
 
     return () => {
       cancelled = true;
     };
   }, [isOwn, activeTab]);
 
-  // /u/<own-handle> is the same page as /profile — canonicalize
-  if (handle && isOwn) return <Navigate to="/profile" replace />;
+  useEffect(() => {
+    if (isOwn) return;
+    let cancelled = false;
+    setVisitorNotFound(false);
 
-  if (!author) {
+    getProfileByHandleApi(profileHandle)
+      .then((profile) => {
+        if (!cancelled) setVisitorProfile(profile);
+      })
+      .catch(() => {
+        if (!cancelled) setVisitorNotFound(true);
+      });
+    listAuthorBlogsApi(profileHandle)
+      .then((res) => {
+        if (!cancelled) {
+          setVisitorBlogDtos(res.items);
+          setVisitorBlogsTotal(res.total);
+          setProfilePage(1);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwn, profileHandle]);
+
+  // Twitter-style canonical URL — the profile lives at /<handle>.
+  // Bare /profile, legacy /u/<own-handle>, or the own handle all forward to it.
+  // Wait for the real profile first so the redirect uses the server handle.
+  const { pathname, search } = useLocation();
+  // Wait for the real profile before rendering (and before the canonical
+  // redirect pulls the server handle) — unless the handle is already cached
+  // locally, in which case the page can show immediately
+  if (loading && !ownHandle) {
     return (
       <AppShell>
-        <div className="mx-auto max-w-270 px-4 py-24 text-center">
-          <EmptyState
-            title="We couldn’t find that author"
-            body="The profile may have moved, or the link may be wrong."
-            ctaLabel="Back to your feed"
-            ctaTo="/feed"
-          />
+        <div className="flex items-center justify-center py-24 text-[14px] text-[#8A8F8B]">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading profile…
         </div>
       </AppShell>
     );
   }
 
-  const withSaved = (list: Story[]) =>
-    list.map((s) => ({
-      ...s,
-      isBookmarked: bookmarks.has(s.id),
-      author:
-        s.author.handle === `@${CURRENT_USER_HANDLE}`
-          ? {
-              ...s.author,
-              name: own.profile.name,
-              avatar: own.profile.avatarUrl ?? s.author.avatar,
-            }
-          : s.author,
-    }));
+  if (isOwn && ownHandle && pathname !== `/${ownHandle}`) {
+    return <Navigate to={`/${ownHandle}${search}`} replace />;
+  }
 
-  const publishedStories = isOwn
+  // Not found / still loading
+  if (!author) {
+    if (!isOwn && visitorNotFound) {
+      return (
+        <AppShell>
+          <div className="mx-auto max-w-270 px-4 py-24 text-center">
+            <EmptyState
+              title="We couldn’t find that author"
+              body="The profile may have moved, or the link may be wrong."
+              ctaLabel="Back to your feed"
+              ctaTo="/feed"
+            />
+          </div>
+        </AppShell>
+      );
+    }
+    return (
+      <AppShell>
+        <div className="flex items-center justify-center py-24 text-[14px] text-[#8A8F8B]">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading profile…
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Live navbar search (`?q=` from AppShell) narrows the visible stories
+  // by title, excerpt or author name
+  const searchQuery = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const matchesQuery = (s: Story) => {
+    if (!searchQuery) return true;
+    return (
+      s.title.toLowerCase().includes(searchQuery) ||
+      s.excerpt.toLowerCase().includes(searchQuery) ||
+      s.author.name.toLowerCase().includes(searchQuery)
+    );
+  };
+
+  const publishedStories = (isOwn
     ? ownBlogDtos.map((b) => blogToStory(b, ownHandle))
-    : withSaved(ALL_STORIES.filter((s) => s.author.handle === `@${profileHandle}`));
-  const savedStories = isOwn
-    ? savedBlogDtos.map((b) => blogToStory(b, ownHandle))
-    : withSaved(ALL_STORIES.filter((s) => bookmarks.has(s.id)));
+    : visitorBlogDtos.map((b) => blogToStory(b, ownHandle))
+  ).filter(matchesQuery);
+  const savedStories = savedBlogDtos
+    .map((b) => blogToStory(b, ownHandle))
+    .filter(matchesQuery);
 
-  const isFollowing = following.has(profileHandle);
-  const followerCount = author.followers + (isFollowing ? 1 : 0);
+  const isFollowing = isOwn
+    ? following.has(profileHandle)
+    : (visitorProfile?.isFollowing ?? false);
+  const followerCount = isOwn
+    ? author.followers + (isFollowing ? 1 : 0)
+    : (visitorProfile?.followers ?? author.followers);
 
   const handleBookmark = (storyId: string, next: boolean) => {
     // Server-backed blogs go through the API; mock stories stay local
@@ -193,12 +297,35 @@ const ProfileView = () => {
       .catch(() => toast.error("Could not delete the story"));
   };
 
+  // Real follow/unfollow through the API — optimistic button, server truth on settle
   const handleFollow = () => {
-    following.set(profileHandle, !isFollowing);
-    toast(
-      isFollowing ? `Unfollowed ${author.name}` : `Following ${author.name}`,
-      { id: "follow" },
+    const next = !isFollowing;
+    if (isOwn) {
+      // own view never renders the button; defensive local toggle only
+      following.set(profileHandle, next);
+      return;
+    }
+    const previousProfile = visitorProfile;
+    setVisitorProfile(
+      previousProfile
+        ? { ...previousProfile, isFollowing: next, followers: previousProfile.followers + (next ? 1 : -1) }
+        : previousProfile,
     );
+    setFollowApi(profileHandle, next)
+      .then((result) =>
+        setVisitorProfile((prev) =>
+          prev ? { ...prev, isFollowing: result.isFollowing, followers: result.followers } : prev,
+        ),
+      )
+      .then(() =>
+        toast(next ? `Following ${author.name}` : `Unfollowed ${author.name}`, {
+          id: "follow", // a rapid second tap replaces the toast instead of stacking
+        }),
+      )
+      .catch(() => {
+        setVisitorProfile(previousProfile);
+        toast.error("Could not update follow");
+      });
   };
 
   const handleDeleteDraft = (id: string) => {
@@ -209,10 +336,40 @@ const ProfileView = () => {
       .catch(() => toast.error("Could not delete draft"));
   };
 
+  const PAGE_SIZE = 20;
+
+  // Real pagination for the Stories tab — own profile or the visitor's
   const handleLoadMore = () => {
     setIsLoadingMore(true);
-    setTimeout(() => setIsLoadingMore(false), 800); // TODO: wire to pagination
+    const next = profilePage + 1;
+    const fetch = isOwn
+      ? listMyPublishedApi(next, PAGE_SIZE)
+      : listAuthorBlogsApi(profileHandle, next, PAGE_SIZE);
+    fetch
+      .then((res) => {
+        const apply = (
+          setter: React.Dispatch<React.SetStateAction<BlogResponseDTO[]>>,
+        ) =>
+          setter((prev) => [
+            ...prev,
+            ...res.items.filter((b) => !prev.some((p) => p.id === b.id)),
+          ]);
+        if (isOwn) {
+          apply(setOwnBlogDtos);
+          setOwnBlogsTotal(res.total);
+        } else {
+          apply(setVisitorBlogDtos);
+          setVisitorBlogsTotal(res.total);
+        }
+        setProfilePage(next);
+      })
+      .catch(() => toast.error("Could not load more stories"))
+      .finally(() => setIsLoadingMore(false));
   };
+
+  const hasMoreStories = isOwn
+    ? ownBlogDtos.length < ownBlogsTotal
+    : visitorBlogDtos.length < visitorBlogsTotal;
 
   const renderStories = (
     list: typeof publishedStories,
@@ -243,7 +400,7 @@ const ProfileView = () => {
             <div className="relative shrink-0 w-16 h-16 md:w-24 md:h-24 md:mb-5">
               {author.avatarUrl ? (
                 <img
-                  src={author.avatarUrl}
+                  src={assetUrl(author.avatarUrl)}
                   alt={`${author.name}’s photo`}
                   className="w-full h-full rounded-full object-cover"
                 />
@@ -344,41 +501,41 @@ const ProfileView = () => {
               <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3.5">
                 Following
               </h3>
-              {following.items.length === 0 ? (
+              {followingUsers.length === 0 ? (
                 <p className="text-[13px] text-[#8A8F8B]">
                   You aren’t following anyone yet.
                 </p>
               ) : (
                 <ul className="space-y-3">
-                  {following.items
-                    .filter((h) => AUTHORS[h])
-                    .slice(0, 5)
-                    .map((h) => {
-                      const a = AUTHORS[h];
-                      return (
-                        <li key={h}>
-                          <Link
-                            to={`/u/${h}`}
-                            className="flex items-center gap-3 text-[14px] text-[#1B1F1C] hover:text-[#1F3D2F] transition-colors"
-                          >
-                            <span
-                              className={`w-6 h-6 rounded-full ${a.color} text-white flex items-center justify-center text-xs font-medium`}
-                            >
-                              {a.name[0]}
-                            </span>
-                            <span>{a.name}</span>
-                          </Link>
-                        </li>
-                      );
-                    })}
+                  {followingUsers.slice(0, 5).map((u) => (
+                    <li key={u.id}>
+                      <Link
+                        to={u.handle ? `/${u.handle}` : "/feed"}
+                        className="flex items-center gap-3 text-[14px] text-[#1B1F1C] hover:text-[#1F3D2F] transition-colors"
+                      >
+                        {assetUrl(u.avatar) ? (
+                          <img
+                            src={assetUrl(u.avatar)}
+                            alt={u.name}
+                            className="w-6 h-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="w-6 h-6 rounded-full bg-[#B27D56] text-white flex items-center justify-center text-xs font-medium">
+                            {u.name[0]}
+                          </span>
+                        )}
+                        <span>{u.name}</span>
+                      </Link>
+                    </li>
+                  ))}
                 </ul>
               )}
-              {following.items.length > 5 && (
+              {followingUsers.length > 5 && (
                 <button
                   type="button"
                   className="mt-4 text-[13px] text-[#1F3D2F] hover:underline"
                 >
-                  See all {following.items.length}
+                  See all {followingUsers.length}
                 </button>
               )}
             </div>
@@ -420,7 +577,12 @@ const ProfileView = () => {
             <>
               {renderStories(
                 publishedStories,
-                isOwn ? (
+                searchQuery && publishedStories.length === 0 ? (
+                  <EmptyState
+                    title={`No results for “${searchQuery}”`}
+                    body="Nothing here matches your search — try another word, or clear it in the navbar."
+                  />
+                ) : isOwn ? (
                   <EmptyState
                     title="You haven’t published anything yet"
                     body="Your published stories will appear here."
@@ -435,7 +597,7 @@ const ProfileView = () => {
                 ),
               )}
 
-              {publishedStories.length > 0 && (
+              {hasMoreStories && publishedStories.length > 0 && (
                 <div className="py-10 flex justify-center">
                   <button
                     type="button"
@@ -488,33 +650,20 @@ const ProfileView = () => {
             isOwn &&
             renderStories(
               savedStories,
-              <EmptyState
-                title="Nothing saved yet"
-                body="Tap the bookmark on any story to keep it here for later."
-                ctaLabel="Browse stories"
-                ctaTo="/feed"
-              />,
-            )}
-
-          {activeTab === "about" && (
-            <div className="py-7 max-w-prose text-[15px] leading-7 text-[#5C625E]">
-              {author.bio?.trim() ? (
-                <p>{author.bio}</p>
-              ) : isOwn ? (
+              searchQuery && savedStories.length === 0 ? (
                 <EmptyState
-                  title="No bio yet"
-                  body="Write a few lines about yourself during onboarding or add one from edit profile."
-                  ctaLabel="Add a bio"
-                  ctaTo="/profile/edit"
+                  title={`No results for “${searchQuery}”`}
+                  body="No saved stories match your search — clear it in the navbar to see everything."
                 />
               ) : (
-                <p className="text-[#8A8F8B]">No bio yet.</p>
-              )}
-              <p className="mt-5 text-[13px] text-[#8A8F8B]">
-                Member since {author.joined}
-              </p>
-            </div>
-          )}
+                <EmptyState
+                  title="Nothing saved yet"
+                  body="Tap the bookmark on any story to keep it here for later."
+                  ctaLabel="Browse stories"
+                  ctaTo="/feed"
+                />
+              ),
+            )}
         </div>
       </main>
     </AppShell>

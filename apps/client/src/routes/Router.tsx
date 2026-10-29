@@ -33,11 +33,14 @@ const Router = createBrowserRouter([
           { path: "onboarding", element: <OnboardingView /> },
           { path: "feed", element: <FeedView /> },
           { path: "profile", element: <ProfilePage /> },
-          { path: "profile/edit", element: <EditProfilePage /> },
+          // legacy alias — canonicalizes to /<handle> inside the page
           { path: "u/:handle", element: <ProfilePage /> },
+          { path: "profile/edit", element: <EditProfilePage /> },
           { path: "write", element: <WritePage /> },
           { path: "write/:id", element: <WritePage /> },
           { path: "blog/:id", element: <BlogPage /> },
+          // Twitter-style profile path: /<handle>
+          { path: ":handle", element: <ProfilePage /> },
         ],
       },
     ],

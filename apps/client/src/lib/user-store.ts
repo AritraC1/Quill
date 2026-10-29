@@ -6,6 +6,7 @@ export interface StoredUser {
   id: string;
   name: string;
   email: string;
+  handle?: string; // cached from GET /user/me for Twitter-style /<handle> routing
 }
 
 const KEY = "quill_user";
@@ -33,7 +34,16 @@ export function saveStoredUser(user: StoredUser): void {
 
 export function clearStoredUser(): void {
   try {
-    localStorage.removeItem(KEY);
+    // The signed-out browser must not leak identity pieces to the next user:
+    // profile edits, avatar cache, bookmarks and followers were previously
+    // left behind on shared devices
+    [
+      "quill_user",
+      "quill_profile_overrides",
+      "quill_onboarding_profile",
+      "quill_bookmarks",
+      "quill_following",
+    ].forEach((key) => localStorage.removeItem(key));
   } catch {
     /* noop */
   }

@@ -89,7 +89,10 @@ export const FOLLOWING_HANDLES = [
   "amaraokafor",
 ];
 
-const by = (h: string) => ({ name: AUTHORS[h].name, handle: `@${h}` });
+const by = (h: string) => ({
+  name: AUTHORS[h]?.name ?? h,
+  handle: `@${h}`,
+});
 
 export const ALL_STORIES: Story[] = [
   {
@@ -173,6 +176,7 @@ export interface Draft {
   excerpt: string;
   updatedAt: string; // ISO
   words: number;
+  scheduledAt?: string; // ISO — set while waiting for the publishing worker
 }
 
 const ago = (hours: number) =>

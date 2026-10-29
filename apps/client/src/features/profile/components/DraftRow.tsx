@@ -9,6 +9,14 @@ const timeAgo = (iso: string) => {
   return hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
 };
 
+const scheduleLabel = (iso: string) =>
+  new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
 const DraftRow = ({
   draft,
   confirming,
@@ -32,9 +40,15 @@ const DraftRow = ({
       </p>
     </Link>
     <div className="mt-4 flex items-center gap-3 text-[13px] text-[#8A8F8B]">
-      <span className="rounded-full bg-[#F0EDE4] px-2.5 py-0.5 text-[#5C625E]">
-        Draft
-      </span>
+      {draft.scheduledAt ? (
+        <span className="rounded-full bg-[#1F3D2F]/10 px-2.5 py-0.5 text-[#1F3D2F]">
+          Scheduled for {scheduleLabel(draft.scheduledAt)}
+        </span>
+      ) : (
+        <span className="rounded-full bg-[#F0EDE4] px-2.5 py-0.5 text-[#5C625E]">
+          Draft
+        </span>
+      )}
       <span>Edited {timeAgo(draft.updatedAt)}</span>
       <span>{draft.words} words</span>
       <div className="ml-auto flex items-center gap-3">

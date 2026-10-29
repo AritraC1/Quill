@@ -9,24 +9,40 @@ const escapeHtml = (text: string): string =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+// Safe `href`/`src`: block URL schemes that can execute script via inline HTML
+const isSafeUrl = (url: string): boolean =>
+  /^(https?:|mailto:|tel:|\/|#)/i.test(url.trim());
 
-// inline spans: code, images, links, bold, italic (input already HTML-escaped)
+// <img src> may also be an inline raster image (what the media library
+// produces). Only base64 png/jpeg/gif/webp — never SVG, which can carry script.
+const isSafeImageSrc = (url: string): boolean =>
+  isSafeUrl(url) ||
+  /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=]+$/i.test(url.trim());
+
+// inline spans: code, images, links, bold, italic.
+// All text must be HTML-escaped BEFORE this runs — replacements only ever
+// emit trusted markup around already-escaped content.
 function inline(text: string): string {
   let out = text;
   out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
   out = out.replace(
     /!\[([^\]]*)\]\(([^)\s]+)\)/g,
-    '<img alt="$1" src="$2" />',
+    (match, alt: string, src: string) =>
+      isSafeImageSrc(src) ? `<img alt="${alt}" src="${src}" />` : match,
   );
   out = out.replace(
     /\[([^\]]+)\]\(([^)\s]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    (match, label: string, href: string) =>
+      isSafeUrl(href)
+        ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`
+        : match,
   );
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
   out = out.replace(/(^|\s)_([^_\n]+)_/g, "$1<em>$2</em>");
   return out;
 }
+
 
 // Canonical markdown -> sanitized HTML (for rich-text mode and the preview)
 export function markdownToHtml(md: string): string {
@@ -44,7 +60,7 @@ export function markdownToHtml(md: string): string {
 
   const flushPara = () => {
     if (para.length) {
-      blocks.push(`<p>${inline(para.join(" "))}</p>`);
+      blocks.push(`<p>${inline(escapeHtml(para.join(" ")))}</p>`);
       para = [];
     }
   };
@@ -104,19 +120,22 @@ export function markdownToHtml(md: string): string {
       lang = fence[1] || "text";
     } else if (heading) {
       flushAll();
-      const level = heading[1].length;
-      blocks.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      const hashes = heading[1] ?? "#";
+      const level = Math.min(hashes.length, 6);
+      blocks.push(
+        `<h${level}>${inline(escapeHtml(heading[2] ?? ""))}</h${level}>`,
+      );
     } else if (rule) {
       flushAll();
       blocks.push("<hr />");
     } else if (line.startsWith(">")) {
       flushAll();
-      quote.push(line.slice(1).trimStart());
+      quote.push(escapeHtml(line.slice(1).trimStart()));
     } else if (item) {
       flushPara();
       flushQuote();
       listOrdered = ordered;
-      listItems.push(item[1]);
+      listItems.push(escapeHtml(item[1] ?? ""));
     } else if (!line.trim()) {
       flushAll();
     } else {
@@ -214,8 +233,19 @@ export function htmlToMarkdown(html: string): string {
     }
   }
 
-  const blocks = Array.from(doc.body.children)
-    .map(elementToMd)
+  const blocks = Array.from(doc.body.childNodes)
+    // Top-level bare text (typed without a block wrapper) becomes a paragraph
+    // so the conversion never drops content the rich-text mode produced
+    .map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = (node.textContent ?? "").trim();
+        return text ? text : "";
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        return elementToMd(node as Element);
+      }
+      return "";
+    })
     .filter((block) => block.trim().length > 0);
 
   return blocks.join("\n\n");

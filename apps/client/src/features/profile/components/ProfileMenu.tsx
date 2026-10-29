@@ -5,7 +5,7 @@ import { toast } from "sonner";
 interface ProfileMenuProps {
   isOwn: boolean;
   name: string;
-  /** The handle behind this profile — links always point to /u/<handle> */
+  /** The handle behind this profile — links always point to /<handle> */
   handle: string;
 }
 
@@ -13,8 +13,8 @@ const ProfileMenu = ({ isOwn, name, handle }: ProfileMenuProps) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Canonical shareable URL: <origin>/u/<handle> (e.g. http://localhost:5173/u/julianvance)
-  const profileUrl = `${window.location.origin}/u/${handle}`;
+  // Canonical shareable URL: <origin>/<handle> (e.g. https://quill.app/julianvance)
+  const profileUrl = `${window.location.origin}/${handle}`;
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {

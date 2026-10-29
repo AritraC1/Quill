@@ -59,6 +59,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
 
   worker:
     build:
@@ -106,3 +108,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

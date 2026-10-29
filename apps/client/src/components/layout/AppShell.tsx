@@ -1,8 +1,21 @@
-import { useState, useRef, useEffect, type ReactNode } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import {
+  useState,
+  useRef,
+  useEffect,
+  type ReactNode,
+  type FormEvent,
+} from "react";
+import {
+  Link,
+  useNavigate,
+  useLocation,
+  useSearchParams,
+} from "react-router-dom";
 import { PenSquare, Search, Bell, Bookmark, Home, X } from "lucide-react";
 import { useAuth } from "../../features/auth";
 import { loadStoredUser } from "../../lib/user-store";
+import { getInitials } from "../../lib/initials";
+import { assetUrl } from "../../features/auth/api/auth.api";
 
 interface AppShellProps {
   children: ReactNode;
@@ -18,9 +31,32 @@ export const AppShell = ({
   const { logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Search works on every page. Pages that own live filtering (the feed)
+  // pass `onSearchChange`; everywhere else the query lives in the `?q=` URL
+  // param (the profile page filters on it live), and Enter jumps to
+  // `/feed?q=…` where the whole feed is searchable.
+  const query = onSearchChange ? searchQuery : (searchParams.get("q") ?? "");
+  const onQueryChange = (val: string) => {
+    if (onSearchChange) {
+      onSearchChange(val);
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    if (val) next.set("q", val);
+    else next.delete("q");
+    setSearchParams(next, { replace: true });
+  };
+  const onQuerySubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!onSearchChange && query.trim()) {
+      navigate(`/feed?q=${encodeURIComponent(query.trim())}`);
+    }
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -47,7 +83,7 @@ export const AppShell = ({
   })();
 
   const storedUser = loadStoredUser();
-  const avatarInitial = storedUser?.name?.trim()[0]?.toUpperCase() ?? "Q";
+  const avatarInitial = getInitials(storedUser?.name) || "Q";
 
   const handleLogout = async () => {
     setDropdownOpen(false);
@@ -83,16 +119,19 @@ export const AppShell = ({
             </Link>
 
             {/* Desktop search */}
-            <div className="hidden sm:flex items-center gap-2 rounded-full border border-[#E6E2D8] bg-white px-3.5 py-1.5 text-[13px] text-[#1B1F1C] shadow-[0_1px_2px_rgba(0,0,0,0.02)] focus-within:border-[#1F3D2F] focus-within:ring-1 focus-within:ring-[#1F3D2F]">
+            <form
+              onSubmit={onQuerySubmit}
+              className="hidden sm:flex items-center gap-2 rounded-full border border-[#E6E2D8] bg-white px-3.5 py-1.5 text-[13px] text-[#1B1F1C] shadow-[0_1px_2px_rgba(0,0,0,0.02)] focus-within:border-[#1F3D2F] focus-within:ring-1 focus-within:ring-[#1F3D2F]"
+            >
               <Search className="w-4 h-4 text-[#8A8F8B]" />
               <input
-                type="text"
+                type="search"
                 placeholder="Search stories & authors..."
-                value={searchQuery}
-                onChange={(e) => onSearchChange?.(e.target.value)}
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
                 className="bg-transparent outline-none placeholder:text-[#8A8F8B] text-[13px] w-52 text-[#1B1F1C]"
               />
-            </div>
+            </form>
           </div>
 
           {/* Center: mobile-only logo */}
@@ -123,9 +162,9 @@ export const AppShell = ({
               <Bell className="w-5 h-5 stroke-[1.6]" />
             </button>
 
-            {/* Bookmarks icon */}
+            {/* Bookmarks icon — deep-links to the Saved tab on your profile */}
             <Link
-              to="/profile"
+              to="/profile?tab=saved"
               className="hidden sm:flex p-1.5 text-[#5C625E] hover:text-[#1B1F1C] transition-colors"
               title="Saved stories"
             >
@@ -143,7 +182,7 @@ export const AppShell = ({
               >
                 {userProfile?.avatarUrl ? (
                   <img
-                    src={userProfile.avatarUrl}
+                    src={assetUrl(userProfile.avatarUrl)}
                     alt="User avatar"
                     className="w-8 h-8 rounded-full object-cover"
                   />
@@ -193,14 +232,17 @@ export const AppShell = ({
 
         {/* Mobile expandable search bar */}
         {mobileSearchOpen && (
-          <div className="sm:hidden px-4 pb-3 flex items-center gap-2">
+          <form
+            onSubmit={onQuerySubmit}
+            className="sm:hidden px-4 pb-3 flex items-center gap-2"
+          >
             <div className="flex-1 flex items-center gap-2 rounded-full border border-[#E6E2D8] bg-white px-3.5 py-1.5 text-[13px]">
               <Search className="w-4 h-4 text-[#8A8F8B]" />
               <input
-                type="text"
+                type="search"
                 placeholder="Search stories & authors..."
-                value={searchQuery}
-                onChange={(e) => onSearchChange?.(e.target.value)}
+                value={query}
+                onChange={(e) => onQueryChange(e.target.value)}
                 className="bg-transparent outline-none placeholder:text-[#8A8F8B] text-[13px] w-full text-[#1B1F1C]"
                 autoFocus
               />
@@ -213,12 +255,12 @@ export const AppShell = ({
             >
               <X className="w-5 h-5" />
             </button>
-          </div>
+          </form>
         )}
       </header>
 
       {/* Main Content Area */}
-      <div className="flex-1 pb-16 sm:pb-0">{children}</div>
+      <div className="flex-1">{children}</div>
 
       {/* Global Footer */}
       <footer className="border-t border-[#E6E2D8] bg-[#F6F3EC] py-10 mt-auto">
@@ -256,6 +298,13 @@ export const AppShell = ({
           </div>
         </div>
       </footer>
+
+      {/* Clearance for the fixed mobile bottom nav (incl. notched phones)
+          so the footer is never hidden behind it */}
+      <div
+        aria-hidden
+        className="h-[max(4rem,calc(4rem+env(safe-area-inset-bottom)))] sm:hidden"
+      />
 
       {/* Mobile Bottom Nav Bar (Home, Write, Saved) */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[#E6E2D8] bg-[#F6F3EC]/95 backdrop-blur-md px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around text-xs text-[#5C625E]">

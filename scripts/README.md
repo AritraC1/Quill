@@ -4,21 +4,14 @@ Helper shell scripts for local development.
 
 | Script | Purpose |
 |---|---|
-| [`setup.sh`](./setup.sh) | One-time monorepo bootstrap — recreates workspace `package.json` files, scaffolds shared/server entry files, creates a fresh Vite React-TS client, then runs `bun install` |
 | [`run.sh`](./run.sh) | Starts the three dev processes (`dev:server`, `dev:client`, `dev:worker`) in the background and waits on them |
 
 ## Usage
 
 ```bash
-chmod +x scripts/*.sh      # first time only
-./scripts/setup.sh
+chmod +x scripts/run.sh      # first time only
 ./scripts/run.sh
 ```
-
-## ⚠️ Caveats
-
-- **`setup.sh` is a historical scaffold script, not a normal installer.** It **overwrites** `packages/shared/package.json`, `apps/server/package.json`, `apps/server/src/index.ts`, and `packages/shared/src/index.ts`, losing current scripts/deps. Only run it when bootstrapping a brand-new checkout from scratch — for anything else prefer `bun install` (or `docker compose up --build`).
-- **`run.sh` backgrounds processes but doesn't handle logs, shutdown, or port conflicts.** Prefer `bun run dev` from the repo root for the same effect with `--filter` handling.
 
 ## Prerequisites
 

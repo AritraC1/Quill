@@ -4,40 +4,42 @@ This document describes the code that exists today. Product and infrastructure i
 
 ## 1. System overview
 
-Quill is a Bun-workspace monorepo with a React single-page client and an Express API. The API currently implements account signup, email OTP authentication, session cookies, onboarding, and a user profile update endpoint. The reading experience is a client-side prototype backed by local mock data; there is no post/feed API yet.
+Quill is a Bun-workspace monorepo with a React single-page client and an Express API. The API implements signup, email OTP authentication, session cookies, onboarding, profile publishing (handle, avatar, genres), drafts/published blogs with a server-backed feed, bookmarks, scheduled publishing through BullMQ, and a follow graph. The client renders real API data; local mock stories remain only as an offline fallback for the feed.
 
 ```text
 Browser
   └── React 19 + Vite client
        └── /api requests (httpOnly cookies)
             └── Express 5 API
-                 ├── PostgreSQL 16 — users, OTPs, refresh-token hashes, blog scaffold
-                 └── Redis 7 — BullMQ email queue
-                      └── separate Bun worker — OTP email delivery via Resend
+                 ├── PostgreSQL 16 — users, OTPs, refresh-token hashes, blogs, bookmarks, follows
+                 ├── uploads/ on disk — avatar files, served statically at /uploads
+                 └── Redis 7 — BullMQ queues (email, blog-publish)
+                      └── separate Bun worker — OTP email + scheduled blog publishing
 ```
 
-In the Docker Compose setup, Nginx serves the client on host port 80 and proxies `/api/` and `/docs/` to the server. PostgreSQL and Redis are on the Compose network; the server and worker are not published as host ports. This is a local/self-hosted Compose topology, not evidence of a configured production deployment.
+In the Docker Compose setup, Nginx serves the client on host port 80 and proxies `/api/`, `/docs/`, and `/uploads/` to the server. PostgreSQL and Redis are on the Compose network; the server and worker are not published as host ports. This is a local/self-hosted Compose topology, not evidence of a configured production deployment.
 
 ## 2. Repository and runtime components
 
 ### Client (`apps/client`)
 
-React 19, TypeScript, React Router, Tailwind CSS v4, and Vite. Routes include the landing page, onboarding, feed, own profile, profile editing, and `/u/:handle`.
+React 19, TypeScript, React Router, Tailwind CSS v4, and Vite. Routes include the landing page, onboarding, feed, own profile (canonical Twitter-style `/:handle`, with `/profile` and `/u/:handle` forwarding), profile editing, and the write/blog pages.
 
 - Authentication operations call the server and use `credentials: "include"`; JavaScript does not read the auth cookies.
-- Feed stories, author profiles, following, and bookmarks are mock/client-side state. Search, topic filtering, and the two feed tabs operate over the local story collection.
-- Profile editing currently saves to browser `localStorage`; it does not call `PATCH /api/user/edit-profile`.
-- Onboarding attempts to save genres/avatar/bio to the API, but client code treats a failed API save as a warning and still completes locally.
+- Feed stories and bookmarks come from the API (`GET /blogs`, bookmark endpoints); avatars upload as files (`POST /user/avatar`) instead of base64 blobs. Local story mocks appear only when the API is unreachable.
+- Visitor profiles fetch real data (`GET /user/:handle`, `GET /blogs?author=<handle>`) and the follow button uses the follow API; the Following sidebar reads `GET /user/following`.
+- `GET /user/me` responses are cached for 10 seconds in the client, and `clearMeCache()` runs on logout together with a wipe of all identity-related localStorage keys.
+- The markdown renderer escapes all user content before applying inline formatting and only allows `http(s)`, `mailto`, relative and hash URLs — stored `<script>` payloads cannot execute.
 
 ### API (`apps/server`)
 
-Bun runs Express 5 with TypeScript. `src/index.ts` configures credentialed CORS, request logging, JSON parsing, cookie parsing, Swagger UI, `/api` routes, and centralized error handling. The routes are grouped into:
+Bun runs Express 5 with TypeScript. `src/index.ts` configures credentialed CORS, request logging, JSON parsing (1 MB cap), cookie parsing, static `/uploads`, Swagger UI, rate limiting (300 req/min API-wide; tighter 20-per-10-min limit on auth endpoints), `/api` routes, and centralized error handling, followed by graceful shutdown on SIGTERM/SIGINT (drain connections, close the DB pool). The routes are grouped into:
 
 - `domains/auth`: signup, OTP request/verification, refresh, session, logout, and protected onboarding.
-- `domains/user`: protected profile update.
-- `domains/blog`: model/repository scaffold only; no controller/routes are mounted.
+- `domains/user`: `/user/me`, public profiles by handle, follow/unfollow, the following list, avatar upload (multer → disk), and protected profile update.
+- `domains/blog`: full draft/publish/bookmark/schedule endpoints (see [API.md](./API.md)).
 
-The server uses controller/service/repository classes in these domains. PostgreSQL access is through `pg` and a connection pool. Redis is used by BullMQ for OTP email jobs; there is no Redis response cache or feed computation.
+The server uses controller/service/repository classes in these domains. Request bodies on write endpoints are validated with zod (`core/validation/validation.ts`). PostgreSQL access is through `pg` and a connection pool. Migrations are applied by `bun run migrate` (`src/scripts/migrate.ts`). Redis is used by BullMQ for the email and blog-publish jobs; there is no Redis response cache.
 
 ### Shared package (`packages/shared`)
 
@@ -45,7 +47,7 @@ Exports TypeScript request/response DTOs shared by client and server. It is not 
 
 ### Email worker
 
-`src/worker.ts` starts a BullMQ worker for the `email` queue. The only implemented job is `send-otp`, which sends the verification code through Resend. Queue configuration specifies three attempts with exponential backoff; the worker handles up to ten jobs concurrently. There are no scheduled, digest, image-processing, or feed-recomputation jobs.
+`src/worker.ts` starts BullMQ workers for the `email` and `blog-publish` queues. `send-otp` delivers the verification code through Resend; `blog-publish` flips scheduled drafts live at their due time. Queue configuration specifies three attempts with exponential backoff; email jobs run up to ten concurrently. The worker process shuts down cleanly (worker `close()` + Redis `quit()`).
 
 ## 3. Implemented request flows
 
@@ -65,21 +67,25 @@ The protected `POST /api/auth/onboard` endpoint stores `fav_genre`, optional ava
 
 ### Reading and profiles
 
-Feed, public/author profile, search, follow, like, bookmark, and profile-edit experiences are currently implemented as client-side demo behavior. No corresponding feed, post, or public-profile endpoints are mounted. The user profile update endpoint exists, but the client edit form is not wired to it and the endpoint currently references database columns absent from the migrations (see [API.md](./API.md)).
+The feed is server-backed (`GET /blogs?page&limit`) with real pagination; bookmarks persist in `blog_bookmarks`. Profile pages read real data — own profiles from `/user/me` + writer stats, visitors from `GET /user/:handle` + `GET /blogs?author=<handle>` — and the follow button writes through the follow API. Search and topic filtering operate over the loaded feed client-side.
+
+The profile edit form persists through `PATCH /api/user/edit-profile` (including the display name), and avatars upload via `POST /api/user/avatar` (multer → disk, URL stored in the DB, served from `/uploads`).
 
 ## 4. Data and infrastructure
 
 The checked-in migrations create:
 
-- `users`: name, email, onboarding fields, and optional handle.
+- `users`: name, email, onboarding fields, handle, website, handle-lock timestamp.
 - `login_otps`: OTP hashes, expiry and revocation timestamps.
 - `refresh_tokens`: hashes of refresh JWTs, expiry and revocation timestamps.
-- `blogs`: a minimal user-owned blog record with title, description and images.
+- `blogs`: title, description, images, markdown `content`, `status` (draft/published), `published_at`, `scheduled_publish_at`.
+- `blog_bookmarks`: viewer ↔ blog unique pairs.
+- `user_follows`: follower ↔ following unique pairs (no self-follow).
 
-The blog repository is incomplete and is not exposed over HTTP. There are no migrations for posts, comments, tags, follows, reading history, likes, bookmarks, handle-change timestamps, or website fields.
+Handle changes are reserved-word checked and unique; unknown-email OTP responses are intentionally indistinguishable from wrong-OTP responses (enumeration defense).
 
-Docker Compose defines PostgreSQL, Redis, API, worker, and Nginx/client services. The client Nginx configuration provides SPA fallback and proxies `/api/` and `/docs/`. TLS termination, a public CDN, object storage, backups, CI/CD deployment, and production monitoring are not configured by the checked-in Compose file.
+Docker Compose defines PostgreSQL (migrations mounted as init scripts), Redis, API, worker, and Nginx/client services. The client Nginx configuration provides SPA fallback and proxies `/api/`, `/docs/`, and `/uploads/`; uploads live in the shared `uploads_data` volume. GitHub Actions CI (`.github/workflows/ci.yml`) runs strict root typecheck, `bun test`, and the client build. TLS termination, a public CDN, object storage, backups, deployment, and production monitoring are not configured by the checked-in Compose file.
 
 ## 5. Future architecture (not implemented)
 
-Posts and publishing, persistent follow/engagement data, server-backed feeds and search, image/object storage, recommendation jobs, cache usage, and production deployment controls remain future work. Keep these out of the description of current runtime behavior until they are implemented and verified.
+Comments, tags/likes notifications, image hosting for blog bodies, recommendation jobs, cache usage, and production deployment controls remain future work. Keep these out of the description of current runtime behavior until they are implemented and verified.

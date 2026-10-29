@@ -16,6 +16,10 @@ export const API_ROUTES = {
   USER: {
     ME: "/user/me",
     EDIT_PROFILE: "/user/edit-profile",
+    PROFILE: (handle: string) => `/user/${handle}`,
+    FOLLOWING: "/user/following",
+    FOLLOW: (handle: string) => `/user/${handle}/follow`,
+    AVATAR: "/user/avatar",
   },
   // Blog Routes
   BLOG: {
@@ -24,6 +28,7 @@ export const API_ROUTES = {
     UPDATE: (id: string) => `/blogs/${id}`,
     DELETE: (id: string) => `/blogs/${id}`,
     PUBLISH: (id: string) => `/blogs/${id}/publish`,
+    SCHEDULE: (id: string) => `/blogs/${id}/schedule`, // DELETE cancels a scheduled publish
     BOOKMARK: (id: string) => `/blogs/${id}/bookmark`,
     COUNT: "/blogs/count",
     DRAFTS: "/blogs/drafts",

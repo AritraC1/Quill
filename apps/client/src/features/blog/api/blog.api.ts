@@ -34,11 +34,23 @@ export async function updateBlogApi(
   });
 }
 
-// Go from draft to published (requires a title server-side)
-export async function publishBlogApi(id: string): Promise<BlogResponseDTO> {
+// Go from draft to published (requires a title server-side).
+// Omit publishAt for an instant publish, or pass a future ISO datetime to
+// schedule it — the publishing worker makes it live at that moment.
+export async function publishBlogApi(
+  id: string,
+  publishAt?: string,
+): Promise<BlogResponseDTO> {
   return fetchWithAuth<BlogResponseDTO>(API_ROUTES.BLOG.PUBLISH(id), {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify(publishAt ? { publishAt } : {}),
+  });
+}
+
+// Cancel a scheduled publish — the blog stays an ordinary draft
+export async function cancelScheduleApi(id: string): Promise<BlogResponseDTO> {
+  return fetchWithAuth<BlogResponseDTO>(API_ROUTES.BLOG.SCHEDULE(id), {
+    method: "DELETE",
   });
 }
 
@@ -59,6 +71,17 @@ export async function listFeedApi(
 ): Promise<BlogListResult> {
   return fetchWithAuth<BlogListResult>(
     `${API_ROUTES.BLOG.CREATE}?page=${page}&limit=${limit}`,
+  );
+}
+
+// One author's published blogs (visitor profiles) — GET /blogs?author=<handle>
+export async function listAuthorBlogsApi(
+  handle: string,
+  page = 1,
+  limit = 20,
+): Promise<BlogListResult> {
+  return fetchWithAuth<BlogListResult>(
+    `${API_ROUTES.BLOG.CREATE}?page=${page}&limit=${limit}&author=${encodeURIComponent(handle)}`,
   );
 }
 

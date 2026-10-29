@@ -9,11 +9,12 @@
     "dev:client": "bun --filter quill-client dev",
     "dev:server": "bun --filter quill-server dev",
     "dev:worker": "bun --filter quill-server dev:worker",
+    "migrate": "bun --filter quill-server migrate",
     "dev": "bun run --filter '*' dev",
     "build": "bun run --filter '*' build",
     "test:server": "bun test apps/server",
-  "test:client": "bun test apps/client",
-  "test": "bun test"
+    "test:client": "bun test apps/client",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
