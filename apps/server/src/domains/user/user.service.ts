@@ -61,6 +61,13 @@ class UserService {
     // `website` is written only via edit-profile; nullable until then
     const website = user.website ?? null;
 
+    // Follower/following counts come from the backend so they're always
+    // correct (e.g. when someone follows you, your own profile reflects it).
+    const [followers, following] = await Promise.all([
+      this.userRepo.countFollowers(userId),
+      this.userRepo.listFollowingIds(userId),
+    ]);
+
     return {
       id: user.id,
       name: user.name,
@@ -72,6 +79,8 @@ class UserService {
         : null,
       website,
       favGenre: user.fav_genre ?? [],
+      followers,
+      following: following.length,
       createdAt: new Date(user.created_at).toISOString(),
     };
   }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Bookmark, Share2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "../../../components/layout/AppShell";
@@ -128,7 +128,16 @@ export const BlogPage = () => {
             )}
             <div className="min-w-0">
               <p className="text-[14px] font-medium text-[#1B1F1C] truncate">
-                {blog.author?.name ?? "Unknown author"}
+                {blog.author?.handle ? (
+                  <Link
+                    to={`/${blog.author.handle}`}
+                    className="hover:underline hover:text-[#1F3D2F] transition-colors"
+                  >
+                    {blog.author.name ?? "Unknown author"}
+                  </Link>
+                ) : (
+                  blog.author?.name ?? "Unknown author"
+                )}
               </p>
               <p className="text-[12px] text-[#8A8F8B]">
                 {blog.publishedAt ? formatDate(blog.publishedAt) : "Draft"} ·{" "}

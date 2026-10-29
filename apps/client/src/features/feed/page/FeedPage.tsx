@@ -17,6 +17,7 @@ import {
   bookmarkBlogApi,
   deleteBlogApi,
 } from "../../blog/api/blog.api";
+import { setFollowApi } from "../../profile/api/profile.api";
 import { blogToStory, isServerBlogId } from "../../blog/lib/blog-story";
 import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
 import Empty from "../components/Empty";
@@ -175,7 +176,7 @@ const FeedPage = () => {
 
     if (q) {
       list = list.filter((s) =>
-        `${s.title} ${s.excerpt} ${s.author.name} ${s.topic}`
+        `${s.title} ${s.excerpt} ${s.author.name} ${s.author.handle ?? ""} ${s.topic} ${s.content ?? ""}`
           .toLowerCase()
           .includes(q),
       );
@@ -284,14 +285,21 @@ const FeedPage = () => {
       .catch(() => showToast("Could not delete the story"));
   };
 
-  const toggleFollow = (handle: string) => {
+  const toggleFollow = async (handle: string) => {
     const on = !following.has(handle);
+    // Optimistic local update so the Following tab reacts immediately
     following.set(handle, on);
-    showToast(
-      on
-        ? `Following ${AUTHORS[handle]?.name ?? handle}`
-        : `Unfollowed ${AUTHORS[handle]?.name ?? handle}`,
-    );
+    try {
+      await setFollowApi(handle, on);
+      showToast(
+        on
+          ? `Following ${AUTHORS[handle]?.name ?? handle}`
+          : `Unfollowed ${AUTHORS[handle]?.name ?? handle}`,
+      );
+    } catch {
+      following.set(handle, !on); // revert on failure
+      showToast("Could not update follow");
+    }
   };
 
   const hour = new Date().getHours();
@@ -453,8 +461,8 @@ const FeedPage = () => {
                         </span>
                       </Link>
                       <FollowButton
-                        following={false}
-                        onClick={() => toggleFollow(h)}
+                        following={following.has(h)}
+                        onClick={() => void toggleFollow(h)}
                       />
                     </li>
                   );

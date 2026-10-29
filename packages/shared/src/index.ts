@@ -45,6 +45,8 @@ export interface UserProfileDTO {
   handleChangedAt?: string | null; // ISO date of the last handle change
   website?: string | null;
   favGenre: string[];
+  followers: number; // how many people follow this user (backend-sourced)
+  following: number; // how many people this user follows (backend-sourced)
   createdAt: string; // ISO — "member since" on the profile page
 }
 

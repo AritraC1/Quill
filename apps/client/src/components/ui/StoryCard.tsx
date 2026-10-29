@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Bookmark,
   MoreHorizontal,
-  Bell,
   Pencil,
   Trash2,
 } from "lucide-react";
@@ -12,6 +11,9 @@ import type { Story } from "../../features/profile/types/story.types";
 interface StoryCardProps {
   story: Story;
   layout?: "grid" | "list";
+  /** Hide the author byline (name + avatar) — on profile pages the author
+   *  is the profile owner or a visited writer, so it adds no info there. */
+  hideAuthor?: boolean;
   onBookmarkToggle?: (storyId: string, newState: boolean) => void;
   /** Only wired for own blogs — opens the editor */
   onEdit?: (storyId: string) => void;
@@ -21,6 +23,7 @@ interface StoryCardProps {
 
 export const StoryCard: React.FC<StoryCardProps> = ({
   story,
+  hideAuthor,
   onBookmarkToggle,
   onEdit,
   onDelete,
@@ -59,59 +62,15 @@ export const StoryCard: React.FC<StoryCardProps> = ({
     "w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-[#5C625E] hover:bg-[#F0EDE4] hover:text-[#1B1F1C] transition-colors";
 
   const renderGraphicCover = () => {
-    if (story.iconType === "letter" || story.id === "1" || story.id === "prof-1") {
-      return (
-        <div className="w-31 h-21.5 rounded-lg bg-[#3F5B4B] flex items-center justify-center shrink-0 shadow-sm">
-          <span className="font-editorial text-4xl text-[#A8D5BA] font-light select-none">
-            T
-          </span>
-        </div>
-      );
-    }
-    if (story.iconType === "quill" || story.id === "2" || story.id === "prof-2") {
-      return (
-        <div className="w-31 h-21.5 rounded-lg bg-[#967046] flex items-center justify-center shrink-0 shadow-sm">
-          {/* Stylized quill stroke icon */}
-          <svg
-            className="w-8 h-8 text-[#EAD9C2]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
-            <line x1="16" y1="8" x2="2" y2="22" />
-            <line x1="17.5" y1="15" x2="9" y2="15" />
-          </svg>
-        </div>
-      );
-    }
-    if (story.iconType === "bell" || story.id === "3" || story.id === "prof-3") {
-      return (
-        <div className="w-31 h-21.5 rounded-lg bg-[#4E5B6E] flex items-center justify-center shrink-0 shadow-sm">
-          <Bell className="w-8 h-8 text-[#D1D9E6] stroke-[1.5]" />
-        </div>
-      );
-    }
-
-    if (story.imageUrl) {
-      return (
-        <img
-          src={story.imageUrl}
-          alt={story.title}
-          className="w-31 h-21.5 rounded-lg object-cover shrink-0"
-        />
-      );
-    }
-
+    // Only render the image box when there is an actual image — otherwise
+    // leave the card text-only (no empty placeholder box).
+    if (!story.imageUrl) return null;
     return (
-      <div className="w-31 h-21.5 rounded-lg bg-[#F0EDE4] flex items-center justify-center shrink-0">
-        <span className="font-newsreader text-sm text-[#5C625E]">
-          {story.topic}
-        </span>
-      </div>
+      <img
+        src={story.imageUrl}
+        alt={story.title}
+        className="w-31 h-21.5 rounded-lg object-cover shrink-0"
+      />
     );
   };
 
@@ -131,12 +90,33 @@ export const StoryCard: React.FC<StoryCardProps> = ({
             {story.excerpt}
           </p>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2.5 text-[12px] text-[#8A8F8B]">
-            {/* Topic pill */}
-            <span className="inline-flex items-center rounded-full bg-[#F0EDE4] px-3 py-1 text-[12px] text-[#1B1F1C]">
-              {story.topic}
-            </span>
+          {/* Clickable author byline → that writer's profile. Hidden on your
+             own profile, where the author is you and it adds no info. */}
+          {story.author.handle && !story.isMine && !hideAuthor ? (
+            <div className="mt-3 flex items-center gap-2">
+              <Link
+                to={`/${story.author.handle.slice(1)}`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-2 text-[13px] font-medium text-[#1B1F1C] hover:underline hover:text-[#1F3D2F] transition-colors"
+                title={story.author.name}
+              >
+                {story.author.avatar ? (
+                  <img
+                    src={story.author.avatar}
+                    alt={story.author.name}
+                    className="w-6 h-6 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-[#B27D56] text-white text-[11px] font-medium flex items-center justify-center">
+                    {story.author.name[0]}
+                  </div>
+                )}
+                <span className="min-w-0 truncate">{story.author.name}</span>
+              </Link>
+            </div>
+          ) : null}
 
+          <div className="mt-4 flex flex-wrap items-center gap-2.5 text-[12px] text-[#8A8F8B]">
             {/* Staff pick badge */}
             {story.isStaffPick && (
               <span className="inline-flex items-center rounded-full bg-[#1F3D2F]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#1F3D2F]">

@@ -69,6 +69,8 @@ function applyServerProfile(profile: Author, me: UserProfileDTO | null): Author 
     handle: me.handle ?? profile.handle,
     handleChangedAt: me.handleChangedAt ?? undefined,
     website: me.website ?? undefined,
+    followers: me.followers ?? 0,
+    following: me.following ?? 0,
     topics: me.favGenre.length ? topicize(me.favGenre) : [],
     joined: new Date(me.createdAt).toLocaleDateString("en-US", {
       month: "long",

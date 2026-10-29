@@ -9,6 +9,14 @@ import { assetUrl } from "../../auth/api/auth.api";
 
 const MAX_EXCERPT = 180;
 
+const FIRST_IMAGE_RE = /!\[([^\]]*)\]\(([^)\s]+)\)/;
+
+// First image embedded in the markdown body (falls back when images[] is empty)
+export const firstImageFromContent = (content: string): string | undefined => {
+  const m = FIRST_IMAGE_RE.exec(content);
+  return m ? m[2] : undefined;
+};
+
 const formatDate = (iso: string): string =>
   new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -31,6 +39,7 @@ export function blogToStory(blog: BlogResponseDTO, ownHandle?: string): Story {
     id: blog.id,
     title: blog.title || "Untitled",
     excerpt,
+    content: blog.content,
     author: {
       name: blog.author?.name ?? "Unknown author",
       handle: handle ? "@" + handle : undefined,
@@ -40,7 +49,7 @@ export function blogToStory(blog: BlogResponseDTO, ownHandle?: string): Story {
     topic: "Writing",
     readTime: `${readTimeMinutes(words)} min read`,
     publishedDate: blog.publishedAt ? formatDate(blog.publishedAt) : "Draft",
-    imageUrl: blog.images?.[0],
+    imageUrl: blog.images?.[0] ?? firstImageFromContent(blog.content),
     isBookmarked: blog.isBookmarked,
     isStaffPick: false,
     isPinned: false,

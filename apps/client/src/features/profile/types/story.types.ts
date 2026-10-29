@@ -8,6 +8,7 @@ export interface Story {
   id: string;
   title: string;
   excerpt: string;
+  content?: string; // full post body, used for search
   author: StoryAuthor;
   topic: string;
   readTime: string;

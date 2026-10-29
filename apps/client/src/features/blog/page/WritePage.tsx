@@ -20,6 +20,7 @@ import {
   updateBlogApi,
 } from "../api/blog.api";
 import type { BlogResponseDTO } from "@quill/shared";
+import { firstImageFromContent } from "../lib/blog-story";
 import { markdownToPlainText, wordCount } from "../lib/markdown";
 import { toLocalDateTimeInput } from "../../../lib/datetime";
 
@@ -75,7 +76,10 @@ export const WritePage = () => {
   const inspectorRef = useRef<HTMLElement>(null);
 
   // Mirrors for callbacks (autosave/publish) so they never read stale state
-  const blogIdRef = useRef<string | null>(id ?? null);
+  // Null until the draft is actually loaded/resolved — initializing to `id`
+  // would make the load effect bail out immediately on mount (`blogIdRef.current
+  // === id`), leaving the editor empty (a fresh page instead of the draft).
+  const blogIdRef = useRef<string | null>(null);
   const draftValuesRef = useRef({ title, content });
   const isDirtyRef = useRef(false);
 
@@ -131,20 +135,21 @@ export const WritePage = () => {
       const run = async (): Promise<string | null> => {
         await previous.catch(() => null); // wait, ignore its failures
         const values = valuesOverride ?? draftValuesRef.current;
+        // Carry the first embedded image (if any) so it shows on story cards.
+        const images = firstImageFromContent(values.content);
+        const payload: { title: string; content: string; images?: string[] } = {
+          title: values.title,
+          content: values.content,
+        };
+        if (images) payload.images = [images];
         setIsSaving(true);
         try {
           if (blogIdRef.current) {
             // description is intentionally untouched — autosave must not
             // wipe the author's summary field
-            await updateBlogApi(blogIdRef.current, {
-              title: values.title,
-              content: values.content,
-            });
+            await updateBlogApi(blogIdRef.current, payload);
           } else {
-            const created = await createBlogApi({
-              title: values.title,
-              content: values.content,
-            });
+            const created = await createBlogApi(payload);
             setBlogIdState(created.id);
             setBlog(created);
             // Keep the editor mounted; only swap the URL (router-aware, with
@@ -201,6 +206,14 @@ export const WritePage = () => {
       content: draftValuesRef.current.content,
     });
     if (!savedId) {
+      setIsPublishing(false);
+      return;
+    }
+    // Already published — editing just saves the update, there is no
+    // "publish again" step (the server rejects re-publishing).
+    if (isPublished) {
+      toast.success("Story updated");
+      navigate("/profile?tab=stories");
       setIsPublishing(false);
       return;
     }

@@ -230,7 +230,9 @@ const ProfileView = () => {
     return (
       s.title.toLowerCase().includes(searchQuery) ||
       s.excerpt.toLowerCase().includes(searchQuery) ||
-      s.author.name.toLowerCase().includes(searchQuery)
+      s.author.name.toLowerCase().includes(searchQuery) ||
+      (s.author.handle ?? "").toLowerCase().includes(searchQuery) ||
+      (s.content ?? "").toLowerCase().includes(searchQuery)
     );
   };
 
@@ -245,9 +247,9 @@ const ProfileView = () => {
   const isFollowing = isOwn
     ? following.has(profileHandle)
     : (visitorProfile?.isFollowing ?? false);
-  const followerCount = isOwn
-    ? author.followers + (isFollowing ? 1 : 0)
-    : (visitorProfile?.followers ?? author.followers);
+  // Follower count is backend-sourced (getMe returns it), so it stays correct
+  // when someone follows you — no local optimistic math needed.
+  const followerCount = author.followers;
 
   const handleBookmark = (storyId: string, next: boolean) => {
     // Server-backed blogs go through the API; mock stories stay local
@@ -305,6 +307,10 @@ const ProfileView = () => {
       following.set(profileHandle, next);
       return;
     }
+    // Keep the shared `quill_following` set in sync so the feed's Following
+    // tab immediately shows this writer's blogs
+    following.set(profileHandle, next);
+
     const previousProfile = visitorProfile;
     setVisitorProfile(
       previousProfile
@@ -383,6 +389,7 @@ const ProfileView = () => {
           <StoryCard
             key={story.id}
             story={story}
+            hideAuthor
             onBookmarkToggle={handleBookmark}
             onEdit={handleEdit}
             onDelete={handleDelete}
