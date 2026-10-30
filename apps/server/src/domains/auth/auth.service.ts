@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import crypto from "node:crypto";
 
 import type {
+  LogoutRequestDTO,
   RefreshTokenDTO,
   RequestOtpDTO,
   SessionResponseDTO,
@@ -231,9 +232,11 @@ class AuthService {
     };
   }
 
-  // Logout — identifies the user from the presented refresh token and
-  // revokes every active refresh token for them (sign-out-everywhere)
-  async logout(data: RefreshTokenDTO): Promise<{ success: true }> {
+  // Logout — verifies the presented refresh token so we cannot be tricked
+  // into revoking arbitrary users, then revokes:
+  //   scope "device" (default) → only this session; other devices keep theirs
+  //   scope "all"              → every refresh token for the user (sign-out-all)
+  async logout(data: LogoutRequestDTO): Promise<{ success: true }> {
     // must have a refresh token to know who is logging out
     if (!data.refreshToken) {
       throw new UnauthorizedError("No active session");
@@ -244,8 +247,11 @@ class AuthService {
       data.refreshToken,
     );
 
-    // revoke all refresh tokens for the user
-    await this.tokenService.revokeAllRefreshTokens(payload.userId);
+    if ((data.scope ?? "device") === "all") {
+      await this.tokenService.revokeAllRefreshTokens(payload.userId);
+    } else {
+      await this.tokenService.revokeRefreshToken(data.refreshToken);
+    }
 
     return { success: true };
   }

@@ -14,6 +14,19 @@ export interface VerifyOtpDTO {
   otp: string;
 }
 
+/** Body of DELETE /auth/logout.
+ * - `scope: "device"` (default) revokes ONLY the presented session — the other
+ *   signed-in devices keep working.
+ * - `scope: "all"` is "sign out everywhere": every refresh token for the user
+ *   is revoked, so every device has to sign back in with an email code.
+ */
+export interface LogoutRequestDTO {
+  refreshToken?: string; // optional — the httpOnly cookie is preferred
+  scope?: LogoutScope;
+}
+
+export type LogoutScope = "device" | "all";
+
 /**
  * Login is transport-layered now:
  * - tokens are delivered as httpOnly cookies (never exposed to JS)
@@ -39,6 +52,7 @@ export interface RefreshTokenDTO {
 export interface UserProfileDTO {
   id: string;
   name: string;
+  email: string; // sign-in address, authenticated responses ONLY (never on /user/:handle)
   bio?: string | null; // empty until written during onboarding or edited
   avatar?: string | null;
   handle?: string | null; // system-generated at first login; editable 1×/6 months
@@ -107,6 +121,79 @@ export interface EditProfileDTO {
   favGenre: string[];
   handle?: string;
   website?: string;
+}
+
+// -------------- SETTINGS -------------- //
+
+/** Default feed tab — the tab you land on when you open Quill */
+export type FeedTabPreference = "for-you" | "following";
+
+/** Reading theme ("dark" is a valid stored value but not selectable in the UI yet) */
+export type ReadingThemePreference = "light" | "sepia" | "dark";
+
+/** Notification switches mirrored by GET/PUT /user/settings */
+export type SettingsNotificationKey =
+  | "appPosts"
+  | "appFollowers"
+  | "appScheduled"
+  | "appReplies"
+  | "emailDigest"
+  | "emailFollowers"
+  | "emailNews";
+
+export interface SettingsNotificationsDTO {
+  appPosts: boolean;
+  appFollowers: boolean;
+  appScheduled: boolean;
+  appReplies: boolean;
+  emailDigest: boolean;
+  emailFollowers: boolean;
+  emailNews: boolean;
+}
+
+/** Text-size bounds for the reader slider — shared so client and server agree */
+export const TEXT_SIZE_RANGE = { min: 15, max: 24, default: 18 } as const;
+
+/** The genre list shown as chips — server validates against these plus anything
+ * already saved from onboarding (older lowercase values), so it is advisory */
+export const SETTINGS_GENRES = [
+  "Essays",
+  "Design",
+  "Technology",
+  "Philosophy",
+  "Culture",
+  "Science",
+  "Fiction",
+  "Poetry",
+  "History",
+  "Travel",
+] as const;
+
+/** GET/PUT /user/settings — the user's saved preference snapshot.
+ * GET returns it; PUT accepts the complete snapshot (always an object with
+ * every field, so a save is the full state of the page's unsaved-changes bar.
+ * The authenticated user id comes from the access token — a user id in the
+ * body is ignored/stripped, never trusted). */
+export interface UserSettingsDTO {
+  /** Favourite genres — persisted in users.fav_genre (also the profile shapes) */
+  genres: string[];
+  defaultTab: FeedTabPreference;
+  /** 15–24 px body text size */
+  textSize: number;
+  theme: ReadingThemePreference;
+  notifications: SettingsNotificationsDTO;
+}
+
+/** PUT /user/settings is the same shape — kept as an alias so the request
+ * contract is explicit in route/controller signatures */
+export type UpdateUserSettingsDTO = UserSettingsDTO;
+
+/** Result of DELETE /user/account — counts so the client can confirm honestly */
+export interface DeleteAccountResultDTO {
+  deleted: boolean;
+  publishedPosts: number;
+  drafts: number;
+  bookmarks: number;
 }
 
 // -------------- BLOG -------------- //

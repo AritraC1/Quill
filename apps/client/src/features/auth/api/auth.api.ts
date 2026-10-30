@@ -144,10 +144,15 @@ export function sessionApi(): Promise<SessionResponseDTO> {
   return sessionPromise;
 }
 
-// Logout (server revokes the session and clears the cookies)
-export async function logoutApi(): Promise<{ success: boolean }> {
+// Logout — DELETE /auth/logout. scope "device" (default) revokes only the
+// presented session so other signed-in devices keep working; "all" is
+// "sign out everywhere" and revokes every refresh token
+export async function logoutApi(
+  scope: import("@quill/shared").LogoutScope = "device",
+): Promise<{ success: boolean }> {
   return sendRequest<{ success: boolean }>(API_ROUTES.AUTH.LOGOUT, {
     method: "DELETE",
+    body: JSON.stringify({ scope }),
   });
 }
 

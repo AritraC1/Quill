@@ -34,6 +34,26 @@ export const editProfileSchema = z.object({
   website: z.string().max(100).optional(),
 });
 
+// PUT /user/settings — the complete page state. Unknown keys (including any
+// sneaky "userId") are stripped; the user id always comes from the token.
+export const settingsNotificationsSchema = z.object({
+  appPosts: z.boolean(),
+  appFollowers: z.boolean(),
+  appScheduled: z.boolean(),
+  appReplies: z.boolean(),
+  emailDigest: z.boolean(),
+  emailFollowers: z.boolean(),
+  emailNews: z.boolean(),
+});
+
+export const userSettingsSchema = z.object({
+  genres: z.array(z.string().trim().min(1).max(40)).max(20),
+  defaultTab: z.enum(["for-you", "following"]),
+  textSize: z.number().int().min(15).max(24),
+  theme: z.enum(["light", "sepia", "dark"]),
+  notifications: settingsNotificationsSchema,
+});
+
 export const createBlogSchema = z.object({
   title: z.string().max(200).optional(),
   content: z.string().max(500_000).optional(),

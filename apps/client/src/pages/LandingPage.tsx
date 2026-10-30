@@ -54,7 +54,7 @@ const LandingPage: React.FC = () => {
               <>
                 <button
                   type="button"
-                  onClick={logout}
+                  onClick={() => void logout()}
                   className="text-[15px] font-medium text-[#232A3B] hover:text-[#3B6255] transition-colors"
                 >
                   Sign out
@@ -92,7 +92,7 @@ const LandingPage: React.FC = () => {
             {isAuthenticated && (
               <button
                 type="button"
-                onClick={logout}
+                onClick={() => void logout()}
                 className="text-sm font-medium text-[#232A3B]"
               >
                 Sign out

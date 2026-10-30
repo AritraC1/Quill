@@ -10,7 +10,7 @@ import { logger } from "../core/logger/logger";
 
 const MIGRATIONS_DIR = path.resolve(
   import.meta.dir,
-  "core/database/migrations",
+  "../core/database/migrations",
 );
 
 async function run(): Promise<void> {

@@ -22,6 +22,8 @@ export const API_ROUTES = {
     FOLLOW: (handle: string) => `/user/${handle}/follow`,
     FOLLOWERS: (handle: string) => `/user/${handle}/followers`,
     AVATAR: "/user/avatar",
+    SETTINGS: "/user/settings",
+    ACCOUNT: "/user/account", // DELETE — permanent account deletion
   },
   // Blog Routes
   BLOG: {

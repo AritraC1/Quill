@@ -15,6 +15,16 @@ router.get("/following", requireAuth, userController.listFollowing);
 // Suggested users to follow (before the /:handle catch-all)
 router.get("/suggestions", requireAuth, userController.listSuggestions);
 
+// Saved settings — GET returns the user's preference snapshot, PUT validates
+// and persists the complete snapshot ("Save changes", transactional; genres
+// land in users.fav_genre). Both before the /:handle catch-all.
+router.get("/settings", requireAuth, userController.getSettings);
+router.put("/settings", requireAuth, userController.updateSettings);
+
+// Permanent account deletion — DELETE /user/account (removes the user and,
+// via ON DELETE CASCADE, blogs, bookmarks, follows, notifications, sessions)
+router.delete("/account", requireAuth, userController.deleteAccount);
+
 // Public profile by handle (must come after the fixed prefixes above)
 router.get("/:handle", requireAuth, userController.getProfileByHandle);
 

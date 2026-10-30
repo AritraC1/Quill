@@ -1,8 +1,11 @@
 import type {
+  DeleteAccountResultDTO,
   EditProfileDTO,
   FollowerListDTO,
   FollowResultDTO,
   PublicProfileDTO,
+  UpdateUserSettingsDTO,
+  UserSettingsDTO,
   UserProfileDTO,
 } from "@quill/shared";
 import UserRepository from "./user.repository";
@@ -13,6 +16,7 @@ import {
   ConflictError,
   NotFoundError,
 } from "../../core/errors";
+import type { UserSettingsRowModel } from "./settings.model";
 
 // System-generated handles look like "julianvance328641"; edits follow
 // the same shape (3–30 chars, lowercase letters/numbers/underscore/hyphen)
@@ -75,6 +79,9 @@ class UserService {
     return {
       id: user.id,
       name: user.name,
+      // Signed-in user only (GET /user/me is behind requireAuth); public
+      // profiles deliberately never include the email
+      email: user.email,
       bio: user.bio ?? null,
       avatar: user.avatar ?? null,
       handle: user.handle ?? null,
@@ -160,6 +167,77 @@ class UserService {
     }
 
     return updatedUser;
+  }
+
+  // The signed-in user's saved preferences. A user who never saved anything
+  // still gets a complete snapshot: the repo COALESCEs missing columns into
+  // the same defaults the settings page seeds itself with.
+  async getSettings(userId: string): Promise<UserSettingsDTO> {
+    const row = await this.userRepo.getSettings(userId);
+    if (!row) {
+      throw new NotFoundError("User not found");
+    }
+
+    return this.toSettingsDTO(row);
+  }
+
+  // Validate + persist the complete snapshot ("Save changes" bar). The body
+  // was schema-checked in the controller; here we normalize the genre list so
+  // junk can never reach users.fav_genre (trim, dedupe, cap).
+  async saveSettings(
+    userId: string,
+    data: UpdateUserSettingsDTO,
+  ): Promise<UserSettingsDTO> {
+    const genres = Array.from(
+      new Set(data.genres.map((genre) => genre.trim()).filter(Boolean)),
+    );
+
+    if (genres.length > 20) {
+      throw new BadRequestError("Choose at most 20 favourite topics");
+    }
+
+    const row = await this.userRepo.saveSettings(userId, {
+      ...data,
+      genres,
+    });
+
+    if (!row) {
+      throw new NotFoundError("User not found");
+    }
+
+    return this.toSettingsDTO(row);
+  }
+
+  // Row → API shape (camelCase mirrors the client's Preferences)
+  private toSettingsDTO(row: UserSettingsRowModel): UserSettingsDTO {
+    return {
+      genres: row.fav_genre ?? [],
+      defaultTab: row.default_tab as "for-you" | "following",
+      textSize: row.text_size,
+      theme: row.theme as "light" | "sepia" | "dark",
+      notifications: {
+        appPosts: row.notif_app_posts,
+        appFollowers: row.notif_app_followers,
+        appScheduled: row.notif_app_scheduled,
+        appReplies: row.notif_app_replies,
+        emailDigest: row.notif_email_digest,
+        emailFollowers: row.notif_email_followers,
+        emailNews: row.notif_email_news,
+      },
+    };
+  }
+
+  // Permanent self-service account deletion. Blogs (published AND drafts),
+  // bookmarks, follows, notifications, refresh tokens and OTPs are all
+  // users.id ON DELETE CASCADE, so removing the user row removes exactly what
+  // the settings page promises — the repo returns the counts as proof.
+  async deleteAccount(userId: string): Promise<DeleteAccountResultDTO> {
+    const stats = await this.userRepo.deleteAccount(userId);
+    if (!stats) {
+      throw new NotFoundError("User not found");
+    }
+
+    return { deleted: true, ...stats };
   }
 
   // Any writer's public profile — no email or internal flags leak out

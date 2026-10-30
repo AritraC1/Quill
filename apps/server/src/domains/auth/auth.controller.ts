@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import AuthService, { type LoginTokens } from "./auth.service";
 import type {
+  LogoutRequestDTO,
   RefreshTokenDTO,
   RequestOtpDTO,
   SessionResponseDTO,
@@ -164,16 +165,18 @@ class AuthController {
     }
   };
 
-  // Logout — revokes every refresh token for the user and clears the cookies
+  // Logout — revokes the presented session ("device", default) or every
+  // session for the user (body scope: "all") and clears the cookies
   logout = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ): Promise<void> => {
     try {
-      const data: RefreshTokenDTO = {
+      const data: LogoutRequestDTO = {
         refreshToken:
           req.cookies?.[AUTH_COOKIES.refresh.name] ?? req.body?.refreshToken,
+        scope: req.body?.scope === "all" ? "all" : "device",
       };
 
       await this.authService.logout(data);

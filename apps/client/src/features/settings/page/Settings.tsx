@@ -16,7 +16,23 @@ import {
 } from "lucide-react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
-import type { FeedTab, NotificationKey, Preferences, ReadingTheme, SectionId } from "../types/settings.types";
+import { getMeApi } from "../../profile/api/profile.api";
+import { useAuth } from "../../auth";
+import { assetUrl } from "../../auth/api/auth.api";
+import { loadStoredUser } from "../../../lib/user-store";
+import {
+  deleteAccountApi,
+  getSettingsApi,
+  saveSettingsApi,
+} from "../api/settings.api";
+import { SETTINGS_GENRES, TEXT_SIZE_RANGE } from "@quill/shared";
+import type {
+  FeedTab,
+  NotificationKey,
+  Preferences,
+  ReadingTheme,
+  SectionId,
+} from "../types/settings.types";
 import Button from "../components/Button";
 import PageHeading from "../components/PageHeading";
 import Card from "../components/Card";
@@ -34,29 +50,20 @@ const SECTIONS: { id: SectionId; label: string; Icon: LucideIcon }[] = [
   { id: "data", label: "Data and account", Icon: Database },
 ];
 
-const GENRES = [
-  "Essays",
-  "Design",
-  "Technology",
-  "Philosophy",
-  "Culture",
-  "Science",
-  "Fiction",
-  "Poetry",
-  "History",
-  "Travel",
-];
+// Genre chips — same list the server exports, so they cannot drift
+const GENRES: string[] = [...SETTINGS_GENRES];
 
 const THEME_PREVIEW: Record<Exclude<ReadingTheme, "dark">, [string, string]> = {
   light: ["#FFFFFF", "#1B1F1C"],
   sepia: ["#F4EFE3", "#3B3224"],
 };
 
-// TODO: replace with the values returned by your preferences API
+// Seed shown while GET /user/settings is in flight and as the reset basis;
+// values match the server defaults in migration 012 exactly
 const DEFAULT_PREFS: Preferences = {
-  genres: ["Essays", "Design", "Technology"],
+  genres: [],
   defaultTab: "for-you",
-  textSize: 18,
+  textSize: TEXT_SIZE_RANGE.default,
   theme: "light",
   notifications: {
     appPosts: true,
@@ -116,10 +123,12 @@ function Segmented<T extends string>({
 
 const DeleteAccountDialog = ({
   handle,
+  busy,
   onCancel,
   onConfirm,
 }: {
   handle: string;
+  busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) => {
@@ -165,8 +174,12 @@ const DeleteAccountDialog = ({
         />
         <div className="flex justify-end gap-2.5">
           <Button onClick={onCancel}>Keep my account</Button>
-          <Button variant="danger" disabled={!matches} onClick={onConfirm}>
-            Delete account
+          <Button
+            variant="danger"
+            disabled={!matches || busy}
+            onClick={onConfirm}
+          >
+            {busy ? "Deleting…" : "Delete account"}
           </Button>
         </div>
       </div>
@@ -181,6 +194,7 @@ const DeleteAccountDialog = ({
 const SettingsPage = () => {
   const navigate = useNavigate();
   const own = useOwnProfile();
+  const { logout, isLoading: isAuthWorking } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -190,6 +204,7 @@ const SettingsPage = () => {
   const [saved, setSaved] = useState<Preferences>(DEFAULT_PREFS);
   const [draft, setDraft] = useState<Preferences>(DEFAULT_PREFS);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -197,11 +212,57 @@ const SettingsPage = () => {
   );
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+
+  // Reference equality = "the user hasn't edited anything yet", used to
+  // decide whether the API response may overwrite the in-memory copies
+  const draftRef = useRef(draft);
+  const savedRef = useRef(saved);
+  useEffect(() => {
+    draftRef.current = draft;
+    savedRef.current = saved;
+  }, [draft, saved]);
+
   const handle = own.profile.handle ?? "";
   const name = own.profile.name || "Quill writer";
   const bio = own.profile.bio ?? "";
-  // TODO: read the email from your auth/session state
-  const email = "you@example.com";
+  //Authenticated account data: the email captured at sign-up until
+  //GET /user/me answers (never exposed through public profile responses)
+  const [email, setEmail] = useState(() => loadStoredUser()?.email ?? "");
+
+  useEffect(() => {
+    let cancelled = false;
+    getMeApi()
+      .then((me) => {
+        if (!cancelled && me.email) setEmail(me.email);
+      })
+      .catch(() => {
+        /* sign-up email fallback stays until the API answers */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load the saved preference snapshot when the page opens (page seeds from
+  // DEFAULT_PREFS already; the response replaces the states if untouched)
+  useEffect(() => {
+    let cancelled = false;
+    getSettingsApi()
+      .then((data) => {
+        if (cancelled) return;
+        // Someone is mid-edit: don't wipe their draft with the stored copy
+        if (draftRef.current === savedRef.current) {
+          setSaved(data);
+          setDraft(data);
+        }
+      })
+      .catch(() => {
+        /* offline — the page stays on its defaults, saving still tries */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -235,34 +296,76 @@ const SettingsPage = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // TODO: await savePreferencesApi(draft);
-      setSaved(draft);
+      // Persist the full snapshot; the server returns the canonical copy
+      const data = await saveSettingsApi(draft);
+      setSaved(data);
+      setDraft(data);
       showToast("Changes saved");
-    } catch {
-      showToast("Could not save changes");
+    } catch (error) {
+      // Draft stays dirty so nothing typed is lost, and the error shows
+      showToast(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not save changes",
+      );
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleSignOut = () => {
-    // TODO: call your logout API, clear auth state, then redirect
-    showToast("Signed out on this device");
+  const handleSignOut = async () => {
+    try {
+      // scope "device" revokes only this browser's session; other devices
+      // keep working
+      await logout("device");
+      navigate("/");
+    } catch {
+      showToast("Could not sign out. Try again.");
+    }
   };
 
-  const handleSignOutEverywhere = () => {
+  const handleSignOutEverywhere = async () => {
     if (
       !window.confirm("Sign out of Quill on every device, including this one?")
     )
       return;
-    // TODO: call your logout API (revokes all refresh tokens) and redirect
-    showToast("Signed out everywhere");
+    try {
+      // scope "all" revokes every refresh token — every device is signed out
+      await logout("all");
+      navigate("/");
+    } catch {
+      showToast("Could not sign out on other devices. Try again.");
+    }
   };
 
-  const handleDeleteAccount = () => {
-    setConfirmDelete(false);
-    // TODO: call account deletion API once the backend supports it
-    showToast("Account deletion requested");
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      // The server deletes the account in one transaction (profile, drafts,
+      // bookmarks, published posts, follows, sessions) and clears cookies
+      const result = await deleteAccountApi();
+      setConfirmDelete(false);
+      // logout() clears the local session state AND the stale profile cache
+      await logout();
+      showToast(
+        result.publishedPosts
+          ? `Account deleted — ${result.publishedPosts} published post${
+              result.publishedPosts === 1 ? "" : "s"
+            } removed`
+          : "Account deleted",
+      );
+      await logout(); // clear the local session state
+      navigate("/");
+    } catch (error) {
+      setConfirmDelete(false);
+      showToast(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not delete your account",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const previewColors =
@@ -380,7 +483,9 @@ const SettingsPage = () => {
                   title="Sign out"
                   description="Sign out of Quill on this device."
                 >
-                  <Button onClick={handleSignOut}>Sign out</Button>
+                  <Button disabled={isAuthWorking} onClick={() => void handleSignOut()}>
+                    Sign out
+                  </Button>
                 </Row>
                 <Row
                   title="Delete account"
@@ -402,8 +507,16 @@ const SettingsPage = () => {
               />
               <Card>
                 <div className="flex flex-wrap items-center gap-4 p-5">
-                  <span className="font-editorial flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#1F3D2F]/10 text-[24px] text-[#1F3D2F]">
-                    {name[0]}
+                  <span className="font-editorial flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1F3D2F]/10 text-[24px] text-[#1F3D2F]">
+                    {assetUrl(own.profile.avatarUrl) ? (
+                      <img
+                        src={assetUrl(own.profile.avatarUrl)}
+                        alt={`${name}’s photo`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      name[0]
+                    )}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="font-editorial text-[20px] leading-tight text-[#1B1F1C]">
@@ -515,8 +628,8 @@ const SettingsPage = () => {
                     <span className="text-[13px] text-[#5C625E]">A</span>
                     <input
                       type="range"
-                      min={15}
-                      max={24}
+                      min={TEXT_SIZE_RANGE.min}
+                      max={TEXT_SIZE_RANGE.max}
                       step={1}
                       value={draft.textSize}
                       aria-label="Text size"
@@ -619,7 +732,8 @@ const SettingsPage = () => {
                 >
                   <Button
                     variant="outlineDanger"
-                    onClick={handleSignOutEverywhere}
+                    disabled={isAuthWorking}
+                    onClick={() => void handleSignOutEverywhere()}
                   >
                     Sign out everywhere
                   </Button>
@@ -700,7 +814,6 @@ const SettingsPage = () => {
                   <ul className="list-disc space-y-1 pl-5 text-[14px] text-[#1B1F1C]">
                     <li>Your profile, drafts and bookmarks are removed.</li>
                     <li>Your followers and following lists are cleared.</li>
-                    {/* TODO: confirm what should happen to published posts */}
                     <li>Published posts are deleted with your account.</li>
                   </ul>
                   <div>
@@ -749,8 +862,9 @@ const SettingsPage = () => {
       {confirmDelete && (
         <DeleteAccountDialog
           handle={handle}
+          busy={isDeleting || isAuthWorking}
           onCancel={() => setConfirmDelete(false)}
-          onConfirm={handleDeleteAccount}
+          onConfirm={() => void handleDeleteAccount()}
         />
       )}
     </AppShell>

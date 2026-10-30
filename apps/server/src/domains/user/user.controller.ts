@@ -1,7 +1,12 @@
 import type { Request, Response, NextFunction } from "express";
 import UserService from "./user.service";
-import type { EditProfileDTO } from "@quill/shared";
+import type { EditProfileDTO, UserSettingsDTO } from "@quill/shared";
 import { BadRequestError } from "../../core/errors";
+import { parseBody, userSettingsSchema } from "../../core/validation/validation";
+import {
+  AUTH_COOKIES,
+  clearCookieOptions,
+} from "../../core/config/cookie.config";
 
 class UserController {
   private userService: UserService;
@@ -24,6 +29,64 @@ class UserController {
         success: true,
         data: result,
       });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Saved settings — GET /user/settings
+  getSettings = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const result = await this.userService.getSettings(req.user?.userId);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Save the complete settings snapshot — PUT /user/settings.
+  // The user id comes from the access token only; the schema strips extra
+  // keys from the body, so a forged "userId" reaches no code path.
+  updateSettings = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const data: UserSettingsDTO = parseBody(userSettingsSchema, req.body);
+      const result = await this.userService.saveSettings(req.user?.userId, data);
+
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Permanent account deletion — DELETE /user/account.
+  // Clears the cookies on the way out so the browser is signed out locally;
+  // every server-side session dies with the user row (ON DELETE CASCADE).
+  deleteAccount = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const result = await this.userService.deleteAccount(req.user?.userId);
+
+      res.clearCookie(
+        AUTH_COOKIES.access.name,
+        clearCookieOptions(AUTH_COOKIES.access.path),
+      );
+      res.clearCookie(
+        AUTH_COOKIES.refresh.name,
+        clearCookieOptions(AUTH_COOKIES.refresh.path),
+      );
+
+      res.status(200).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import type { LogoutScope } from "@quill/shared";
 import type { AuthSuccessResult } from "../types/auth.types";
 import {
   logoutApi,
@@ -127,11 +128,11 @@ export function useAuth() {
     [],
   );
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (scope: LogoutScope = "device") => {
     setIsLoading(true);
     setError(null);
     try {
-      await logoutApi();
+      await logoutApi(scope);
       setSession(SIGNED_OUT);
       clearStoredUser();
       clearMeCache();
