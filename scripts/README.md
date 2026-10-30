@@ -1,24 +1,20 @@
-# scripts/
+# Scripts
 
-Helper shell scripts for local development.
+Small shell helpers for local development.
 
-| Script | Purpose |
+| File | Purpose |
 |---|---|
-| [`run.sh`](./run.sh) | Starts the three dev processes (`dev:server`, `dev:client`, `dev:worker`) in the background and waits on them |
+| [`run.sh`](./run.sh) | Starts the root `dev:server`, `dev:client`, and `dev:worker` commands in the background, then waits for them |
 
 ## Usage
 
+Run from the repository root:
+
 ```bash
-chmod +x scripts/run.sh      # first time only
+chmod +x scripts/run.sh
 ./scripts/run.sh
 ```
 
-## Prerequisites
+The script expects Bun, installed workspace dependencies, configured root `.env`, PostgreSQL, and Redis. It does not start or migrate the database. Start local dependencies with `docker compose up postgres redis`, then run `bun run migrate` before starting the API when required.
 
-- [Bun](https://bun.sh) ≥ 1.3
-- A `.env` at the repo root — see `.env.example`: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET` (≥32 chars), `RESEND_API_KEY` (`re_…`), `VITE_API_URL`
-- Local Postgres + Redis, or `docker compose up postgres redis` for the data stores
-
-## Prefer Docker?
-
-`docker compose up --build` from the repo root starts the entire stack (client, server, worker, postgres, redis) with no scripts needed — see the root [README](../README.md).
+For the complete stack, see the root [README](../README.md) and `docker compose up --build`.

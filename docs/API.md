@@ -1,6 +1,6 @@
 # Quill — API Reference
 
-This reference describes routes mounted by `apps/server` and important implementation gaps.
+This reference describes routes currently mounted by `apps/server`, along with behavior that is stored but not yet applied elsewhere in the client.
 
 - **Runtime:** Bun + Express 5
 - **Base URL (local server):** `http://localhost:3000/api`
@@ -41,7 +41,7 @@ The client sends `credentials: "include"`, and the server allows the configured 
 | Code | Use |
 |---|---|
 | 200 | Successful request |
-| 201 | Account created or onboarding request accepted |
+| 201 | Account created, onboarding completed, blog created, or avatar uploaded |
 | 400 | Missing/invalid request data or rejected state |
 | 401 | Missing, invalid, expired, or revoked authentication |
 | 409 | Account already exists |
@@ -50,10 +50,11 @@ The client sends `credentials: "include"`, and the server allows the configured 
 
 ### Request validation
 
-Write endpoints (`/auth/*`, `/auth/onboard`, `PATCH /user/edit-profile`, `POST /blogs`,
-`PATCH /blogs/:id`, `POST /blogs/:id/publish`) validate their bodies with zod
-(`apps/server/src/core/validation/validation.ts`) and reply `400` with the first
-violation as `"<field>: <message>"`.
+Auth, onboarding, blog create/update/publish, and `PUT /user/settings` validate
+their bodies with Zod (`apps/server/src/core/validation/validation.ts`) and
+reply `400` with the first violation as `"<field>: <message>"`. Profile edits
+are validated in the service for name and handle rules, but do not currently
+pass through the shared Zod body parser.
 
 ### Rate limiting
 
@@ -91,13 +92,13 @@ Creates an account. It does not sign the user in; request and verify an OTP sepa
 
 ### `POST /auth/request-otp`
 
-Creates a 30-minute OTP record and queues an email job. Any previous active OTP for the user is revoked.
+Creates a 30-minute OTP record and queues an email job. Any previous active OTP for the user is revoked. For an unknown email, it intentionally returns the same success response without queuing a job.
 
 **Request:** `{ "email": "me@example.com" }`
 
 **200 response:** `{ "success": true, "data": { "success": true } }`
 
-**Errors:** `400` if email is missing or the account does not exist.
+**Errors:** `400` if the email is missing or invalid.
 
 > **Critical development limitation:** `auth.service.ts` currently generates the literal code `0000`, and verification accepts `0000` as a bypass. Do not expose this behavior in production.
 
@@ -139,7 +140,9 @@ Verifies the refresh cookie without rotating it, looks up the user, and returns 
 
 ### `DELETE /auth/logout`
 
-Accepts the refresh cookie or a legacy `{ "refreshToken": "..." }` body, revokes all refresh tokens for that user, and clears both cookies. This signs the user out of all sessions, not only the current browser.
+Accepts the refresh cookie or a legacy `{ "refreshToken": "..." }` body. By default, it revokes only the presented refresh token; send `{ "scope": "all" }` to revoke every session for that user. Both cookies are cleared from the current browser in either case.
+
+**Request:** `{ "scope": "device" }` (default) or `{ "scope": "all" }`.
 
 **200 response:** `{ "success": true, "data": { "success": true } }`
 
@@ -159,7 +162,7 @@ Persists genres, optional avatar and bio, and marks onboarding complete. This en
 }
 ```
 
-At least one `favGenre` item is required; `avatar` and `bio` are optional.
+`favGenre` must contain 1–5 entries; `avatar` and `bio` are optional. The avatar may be a URL or legacy data URL.
 
 **201 response:** `{ "success": true, "data": { "success": true } }`
 
@@ -171,7 +174,7 @@ At least one `favGenre` item is required; `avatar` and `bio` are optional.
 
 ### `GET /user/me` — authenticated
 
-The signed-in user's profile. `bio` is whatever the user wrote during onboarding — `null` when they never wrote one, so the client About tab stays empty. `website` is written only via `PATCH /user/edit-profile` (schema pending migration).
+The signed-in user's profile, including the private sign-in email, follower/following counts, and profile fields.
 
 **200 response:**
 
@@ -180,12 +183,17 @@ The signed-in user's profile. `bio` is whatever the user wrote during onboarding
   "success": true,
   "data": {
     "id": "uuid",
-    "name": "About Test",
-    "bio": "Bio written during onboarding.",
-    "avatar": null,
-    "handle": "abouttest611793",
+    "name": "Aritra Chatterjee",
+    "email": "me@example.com",
+    "bio": "A short introduction",
+    "avatar": "/uploads/avatar.jpg",
+    "handle": "aritra611793",
+    "handleChangedAt": null,
     "website": null,
-    "favGenre": ["essays"]
+    "favGenre": ["Essays"],
+    "followers": 3,
+    "following": 2,
+    "createdAt": "2026-10-28T15:38:34.508Z"
   }
 }
 ```
@@ -194,7 +202,7 @@ The signed-in user's profile. `bio` is whatever the user wrote during onboarding
 
 ### `PATCH /user/edit-profile` — authenticated
 
-The server accepts `name`, `avatar`, `bio`, `favGenre`, `handle`, and `website`, and returns the updated database row on success.
+The server accepts optional `name`, `avatar`, `bio`, `favGenre`, `handle`, and `website`, and returns the updated database row on success. Name length and handle shape/reserved-name/uniqueness/lock rules are enforced in the service. Other fields currently do not use the shared Zod parser.
 
 **Intended request shape**
 
@@ -209,7 +217,7 @@ The server accepts `name`, `avatar`, `bio`, `favGenre`, `handle`, and `website`,
 }
 ```
 
-Fields are applied with `COALESCE`, so omitted or `null` values leave stored values unchanged. The TypeScript DTO marks `favGenre` as required, though the repository can accept an omitted value at runtime.
+Fields are applied with `COALESCE`, so omitted or `null` values leave stored values unchanged. The shared TypeScript DTO marks `favGenre` as required even though the repository can accept an omitted value at runtime.
 
 **Handle policy:** every account starts with a system-generated handle (e.g. `julianvance328641`, issued at OTP verification). The handle can be changed once every 6 months — `users.handle_changed_at` is stamped only when the handle actually changes, and subsequent changes inside the window are rejected with `400 "You can change your handle only once every 6 months"`. Handles must match `^[a-z0-9][a-z0-9_-]{2,29}$` (lowercase; normalized) and are unique — a collision returns `409`.
 
@@ -252,6 +260,24 @@ behind `requireAuth` and returns the viewer's follow state:
 
 **Errors:** `404` unknown handle.
 
+### `GET /user/:handle/followers` — authenticated
+
+Returns a page of followers, newest first. Query parameters: `page` (default
+1) and `limit` (default 10, maximum 50). Each follower includes `id`, `name`,
+`handle`, `avatar`, and whether the viewer already follows them.
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      { "id": "uuid", "name": "Sam Reader", "handle": "samreader", "avatar": null, "isFollowing": false }
+    ],
+    "total": 1
+  }
+}
+```
+
 ### `POST /user/:handle/follow` / `DELETE /user/:handle/follow` — authenticated
 
 Follow / unfollow. `POST` is idempotent; `DELETE` succeeds silently when not
@@ -275,6 +301,62 @@ This powers the profile-page Following sidebar. Route order in `user.routes.ts`
 is load-bearing: `/me` and `/following` must be registered before the `/:handle`
 catch-all.
 
+### `GET /user/suggestions` — authenticated
+
+Returns suggested accounts, excluding the current user and users they already
+follow. `limit` defaults to 5 and is clamped to 1–20. Each item contains profile
+summary fields and a follower count. Suggestions are basic and are not ranked
+by a recommendation system.
+
+### `GET /user/settings` / `PUT /user/settings` — authenticated
+
+`GET` returns the complete saved preference snapshot, including defaults for
+users who have never saved settings. `PUT` replaces the complete snapshot;
+genres are stored in `users.fav_genre`, while the remaining values are stored
+in `user_settings`. The write is transactional.
+
+```json
+{
+  "genres": ["Essays", "Design"],
+  "defaultTab": "for-you",
+  "textSize": 18,
+  "theme": "light",
+  "notifications": {
+    "appPosts": true,
+    "appFollowers": true,
+    "appScheduled": true,
+    "appReplies": false,
+    "emailDigest": true,
+    "emailFollowers": false,
+    "emailNews": false
+  }
+}
+```
+
+Allowed `defaultTab`: `for-you` or `following`; `textSize`: integer 15–24;
+`theme`: `light`, `sepia`, or `dark`; at most 20 non-empty genres. All seven
+notification switches are booleans. These settings are persisted, but the
+client currently does not apply most of them to feed selection, reader styling,
+or notification/email delivery.
+
+### `DELETE /user/account` — authenticated
+
+Permanently deletes the signed-in user and cascaded records (posts, bookmarks,
+follows, notifications, OTPs, refresh tokens, and settings) in a database
+transaction, then clears both auth cookies.
+
+**200 response:**
+
+```json
+{
+  "success": true,
+  "data": { "deleted": true, "publishedPosts": 2, "drafts": 1, "bookmarks": 3 }
+}
+```
+
+The counts are returned for the confirmation UI; deleted account data cannot
+be restored.
+
 ## 4. Blog (`/blogs`) — all authenticated
 
 Blogs are markdown documents stored with a `draft`/`published` status. Every write
@@ -286,6 +368,7 @@ source; `blog_description` is an optional excerpt.
 |---|---|---|
 | POST | `/blogs` | Create a blog — **always saved as a draft** |
 | GET | `/blogs?page&limit` | Feed: every published blog, newest first, with the viewer's `isBookmarked` flag. Optional `?author=<handle>` narrows to one writer's published blogs (visitor profiles) |
+| GET | `/blogs/following?page&limit` | Published blogs by writers the signed-in user follows, newest first |
 | GET | `/blogs/count` | Writer statistics: `{ published, drafts, total }` |
 | GET | `/blogs/drafts?page&limit` | The signed-in writer's drafts only |
 | GET | `/blogs/published?page&limit` | The signed-in writer's published blogs |
@@ -312,6 +395,11 @@ viewer's saved state on feed/detail/saved responses.
   "images": ["https://..."]
 }
 ```
+
+Current request validation accepts `title`, `content`, and `description`.
+Although the database and shared DTO include `images`, the active Zod schema
+does not currently accept that field (unknown body keys are stripped), so blog
+image persistence is not available through these routes yet.
 
 **Single blog response** (dates serialized as ISO strings):
 
@@ -416,7 +504,8 @@ of the signed-in user.
   `ON DELETE CASCADE`; de-deleting a user or blog removes its notifications.
   Schema: `migrations/011_create_notifications.sql`. The client polls
   `/notifications/unread-count` every 30 s (live streaming via SSE/WebSockets
-  is a future upgrade).
+  is a future upgrade). The user settings notification switches are stored but
+  do not currently filter in-app events or trigger email notifications.
 
 ## 6. System and documentation routes
 
@@ -456,6 +545,7 @@ The email worker sends OTP email through Resend.
 | `blogs.scheduled_publish_at` | Scheduled-publish timestamp | `009_blog_scheduling.sql` |
 | `user_follows` | `follower_id` ↔ `following_id` unique pair (no self-follow), `created_at` | `010_user_follows.sql` |
 | `notifications` | `recipient_id`, `actor_id`, `blog_id`, `type`, unique `event_key`, `read_at`; unread index | `011_create_notifications.sql` |
+| `user_settings` | Default feed tab, text size, theme, notification switches; genres remain in `users.fav_genre` | `012_user_settings.sql` |
 
 Migrations are plain, idempotent SQL files in `src/core/database/migrations/`,
 applied in filename order by the runner (`bun run migrate`,
@@ -480,6 +570,7 @@ applied in filename order by the runner (`bun run migrate`,
 | `deleteBlogApi` | `DELETE /blogs/:id` |
 | `getBlogApi` | `GET /blogs/:id` |
 | `listFeedApi` | `GET /blogs?page&limit` |
+| `listFollowingFeedApi` | `GET /blogs/following?page&limit` |
 | `listMyPublishedApi` | `GET /blogs/published` |
 | `listDraftsApi` | `GET /blogs/drafts` |
 | `blogCountApi` | `GET /blogs/count` |
@@ -489,6 +580,8 @@ applied in filename order by the runner (`bun run migrate`,
 | `getProfileByHandleApi` | `GET /user/:handle` (visitor profiles) |
 | `setFollowApi` | `POST`/`DELETE /user/:handle/follow` |
 | `listFollowingApi` | `GET /user/following` (profile Following sidebar) |
+| `listFollowersApi` | `GET /user/:handle/followers?page&limit` |
+| `listSuggestionsApi` | `GET /user/suggestions?limit` |
 | `uploadAvatarApi` | `POST /user/avatar` (multipart), then `PATCH /user/edit-profile` with the URL |
 | `assetUrl` | Resolves server-relative `/uploads/…` paths against the API origin |
 | `listNotificationsApi` | `GET /notifications?page&limit` (bell dropdown) |
@@ -496,9 +589,13 @@ applied in filename order by the runner (`bun run migrate`,
 | `markNotificationReadApi` | `PATCH /notifications/:id/read` |
 | `markAllNotificationsReadApi` | `PATCH /notifications/read-all` |
 | `clearNotificationsApi` | `DELETE /notifications` ("Clear" in the bell) |
+| `getSettingsApi` / `saveSettingsApi` | `GET` / `PUT /user/settings` |
+| `deleteAccountApi` | `DELETE /user/account` |
 
-The client write editor (`/write`, `/write/:id`) autosaves as a draft and only
-publishes when the Publish button is pressed; the feed and profile tabs render
-API blogs through the existing `StoryCard` format. The feed paginates server-side
-(20 per page via the IntersectionObserver sentinel); mock stories appear only
-when the API is unreachable.
+The client write editor (`/write`, `/write/:id`) autosaves as a draft and
+publishes immediately or schedules through the API. Feed and profile pages
+render server blogs; feed requests are paginated (20 per server page). The For
+You and Following feeds are separate endpoints. Search/topic filtering is
+client-side over loaded posts; fallback stories can appear if a feed API request
+fails. Settings persist, but most are not yet applied elsewhere in the client or
+notification delivery.

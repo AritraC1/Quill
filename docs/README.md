@@ -1,32 +1,23 @@
-# Quill Documentation
+# Quill documentation
 
-Product + engineering documentation for the Quill project.
+This documentation describes the checked-in implementation and labels work that is not yet wired or production-ready.
 
 | Document | Contents |
 |---|---|
-| [`API.md`](./API.md) | Full REST API reference for `apps/server` — every endpoint, request/response shape, errors, data model |
-| [`PRD.md`](./PRD.md) | Product requirements, scope, priorities, current implementation status |
-| [`Architecture.md`](./Architecture.md) | Implemented component breakdown, request flow, deployment topology |
-| [`System-Design.md`](./System-Design.md) | Current infrastructure and future operational considerations |
-| [`../CHANGE-LOG.md`](../CHANGE-LOG.md) | Chronological change log |
+| [PRD](./PRD.md) | Product scope, delivered behavior, gaps, and launch blockers |
+| [Architecture](./Architecture.md) | Runtime components, request flows, and deployment topology |
+| [System Design](./System-Design.md) | Data paths, background processing, operational limits, and future work |
+| [API reference](./API.md) | Mounted REST endpoints, payloads, and implementation details |
+| [Change log](../CHANGE-LOG.md) | Historical technical changes |
 
-## Repo map
+## Repository map
 
+```text
+apps/client/       React SPA and feature-oriented UI
+apps/server/       Express API, PostgreSQL domains, and BullMQ workers
+packages/shared/   TypeScript DTOs shared by client and server
+scripts/           Local helper scripts
+docker-compose.yml Local Compose topology
 ```
-quill/
-├── apps/
-│   ├── client/        → React 19 + Vite + Tailwind v4 SPA (README inside)
-│   └── server/        → Express 5 + TypeScript API (README inside)
-├── packages/
-│   └── shared/        → shared DTO types used by client & server (README inside)
-├── scripts/
-│   ├── setup.sh       → first-run environment setup
-│   └── run.sh         → local dev boot (README inside)
-├── docker-compose.yml → postgres + redis + server + worker + client (nginx)
-├── docs/
-│   ├── API.md          → REST API reference
-│   ├── PRD.md          → product requirements
-│   ├── Architecture.md → architecture overview
-│   └── System-Design.md → current system design
-└── CHANGE-LOG.md       → technical change history
-```
+
+Start with the root [README](../README.md) for setup instructions. Compose applies SQL migration files automatically only when PostgreSQL initializes a new data volume; use `bun run migrate` for an existing database.

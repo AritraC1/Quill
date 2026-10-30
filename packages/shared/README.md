@@ -1,47 +1,28 @@
-# @quill/shared
+# `@quill/shared`
 
-Shared TypeScript type definitions used by both `apps/client` and `apps/server`, distributed through Bun workspaces (`"workspace:*"` — no publishing, no version drift).
+Shared compile-time TypeScript DTOs and constants consumed by `apps/client` and `apps/server` through Bun workspaces. This package has no runtime validation layer; server request validation lives in `apps/server/src/core/validation`.
 
 ## Usage
 
 ```ts
-import type { SignUpRequestDTO, AuthResponseDTO } from "@quill/shared";
+import type { UserProfileDTO, BlogResponseDTO } from "@quill/shared";
+import { SETTINGS_GENRES, TEXT_SIZE_RANGE } from "@quill/shared";
 ```
 
-Add the workspace dependency in the consuming package.json:
+Add `"@quill/shared": "workspace:*"` to a consuming workspace package's dependencies.
 
-```jsonc
-"dependencies": { "@quill/shared": "workspace:*" }
-```
+## Export groups
 
-## Exports
+| Group | Representative exports |
+|---|---|
+| Auth | `SignUpRequestDTO`, `RequestOtpDTO`, `VerifyOtpDTO`, `LogoutRequestDTO`, `LogoutScope`, `AuthResponseDTO`, `SessionResponseDTO`, `RefreshTokenDTO` |
+| User/profile | `UserProfileDTO`, `PublicProfileDTO`, `EditProfileDTO`, `OnboardRequestDTO`, `AvatarUploadDTO`, `FollowResultDTO`, `FollowerDTO`, `FollowerListDTO` |
+| Settings | `UserSettingsDTO`, `UpdateUserSettingsDTO`, `SettingsNotificationsDTO`, feed/theme preference types, `SETTINGS_GENRES`, `TEXT_SIZE_RANGE` |
+| Account | `DeleteAccountResultDTO` |
+| Blog | `BlogStatus`, `CreateBlogDTO`, `UpdateBlogDTO`, `BlogAuthorDTO`, `BlogResponseDTO`, `BlogCountDTO`, `PublishBlogDTO`, `BlogBookmarkDTO` |
 
-### Auth
-
-| Type | Used by | Shape |
-|---|---|---|
-| `SignUpRequestDTO` | client & server | `{ name, email }` |
-| `RequestOtpDTO` | client & server | `{ email }` |
-| `VerifyOtpDTO` | client & server | `{ email, otp }` |
-| `RefreshTokenDTO` | client & server | `{ refreshToken }` |
-| `AuthResponseDTO` | client & server | `{ accessToken, refreshToken, onboardingCompleted? }` |
-
-### User
-
-| Type | Used by | Shape |
-|---|---|---|
-| `OnboardRequestDTO` | client & server | `{ avatar?, bio?, favGenre }` |
-| `EditProfileDTO` | client & server | `{ avatar?, bio?, favGenre, handle?, website? }` |
-
-### Blog
-
-| Type | Used by | Shape |
-|---|---|---|
-| `CreateBlogDTO` | server (repository) | `{ title, description, images? }` |
-| `UpdateBlogDTO` | server (repository) | `{ title, description, images? }` |
-
-> **Note:** the blog domain is scaffolded only — these DTOs are referenced by `blog.repository.ts` but no route accepts them yet.
+These are API/data contracts, not evidence that every preference is currently applied in the UI. For persisted settings behavior and API routes, see the [API reference](../../docs/API.md).
 
 ## Source
 
-Everything lives in a single file: [`src/index.ts`](./src/index.ts). Add new DTOs there; both apps pick them up on the next dev/build run (Bun resolves the workspace package directly, no build step needed for typos — though a restart of `bun run dev` is required to re-resolve type changes).
+Types and shared constants are defined in [`src/index.ts`](./src/index.ts). Bun resolves the package source directly; there is no separate build or publish step.

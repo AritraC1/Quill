@@ -1,91 +1,99 @@
 # Quill — Architecture
 
-This document describes the code that exists today. Product and infrastructure ideas that are not implemented are called out as future work rather than represented as running services.
+This describes the checked-in implementation, not a proposed production architecture. For request/response contracts, see [API.md](./API.md).
 
 ## 1. System overview
 
-Quill is a Bun-workspace monorepo with a React single-page client and an Express API. The API implements signup, email OTP authentication, session cookies, onboarding, profile publishing (handle, avatar, genres), drafts/published blogs with a server-backed feed, bookmarks, scheduled publishing through BullMQ, and a follow graph. The client renders real API data; local mock stories remain only as an offline fallback for the feed.
+Quill is a Bun-workspace monorepo with a React single-page client, an Express API, PostgreSQL, and a separate BullMQ worker process.
 
 ```text
 Browser
   └── React 19 + Vite client
-       └── /api requests (httpOnly cookies)
-            └── Express 5 API
-                 ├── PostgreSQL 16 — users, OTPs, refresh-token hashes, blogs, bookmarks, follows
-                 ├── uploads/ on disk — avatar files, served statically at /uploads
-                 └── Redis 7 — BullMQ queues (email, blog-publish)
-                      └── separate Bun worker — OTP email + scheduled blog publishing
+       └── /api requests with httpOnly cookies
+            └── Express 5 API (Bun)
+                 ├── PostgreSQL — users, auth state, blogs, follows, bookmarks,
+                 │                notifications, and settings
+                 ├── local uploads directory — profile avatars (/uploads)
+                 └── Redis / BullMQ
+                      └── worker — OTP email, scheduled publishing,
+                                   notification fan-out
 ```
 
-In the Docker Compose setup, Nginx serves the client on host port 80 and proxies `/api/`, `/docs/`, and `/uploads/` to the server. PostgreSQL and Redis are on the Compose network; the server and worker are not published as host ports. This is a local/self-hosted Compose topology, not evidence of a configured production deployment.
+In Compose, Nginx serves the client on port 80 and proxies `/api/`, `/docs/`, and `/uploads/` to the server. PostgreSQL is published on host port 5432; Redis, the API, and worker are internal to the Compose network. Compose is a local/self-hosting starting point and does not configure production TLS, backups, external object storage, or observability.
 
-## 2. Repository and runtime components
+## 2. Components
 
 ### Client (`apps/client`)
 
-React 19, TypeScript, React Router, Tailwind CSS v4, and Vite. Routes include the landing page, onboarding, feed, own profile (canonical Twitter-style `/:handle`, with `/profile` and `/u/:handle` forwarding), profile editing, and the write/blog pages.
+React 19, TypeScript, React Router 7, Tailwind CSS 4, and Vite. Feature areas include auth/onboarding, blog editor/reader, feed, notifications, profile, and settings. Routes include `/`, `/status`, `/onboarding`, `/feed`, `/profile`, `/profile/edit`, `/write`, `/write/:id`, `/blog/:id`, `/settings`, `/u/:handle` (legacy), and `/:handle` (canonical profile route).
 
-- Authentication operations call the server and use `credentials: "include"`; JavaScript does not read the auth cookies.
-- Feed stories and bookmarks come from the API (`GET /blogs`, bookmark endpoints); avatars upload as files (`POST /user/avatar`) instead of base64 blobs. Local story mocks appear only when the API is unreachable.
-- Visitor profiles fetch real data (`GET /user/:handle`, `GET /blogs?author=<handle>`) and the follow button uses the follow API; the Following sidebar reads `GET /user/following`.
-- `GET /user/me` responses are cached for 10 seconds in the client, and `clearMeCache()` runs on logout together with a wipe of all identity-related localStorage keys.
-- The markdown renderer escapes all user content before applying inline formatting and only allows `http(s)`, `mailto`, relative and hash URLs — stored `<script>` payloads cannot execute.
+- Auth requests use `credentials: "include"`; JavaScript cannot read the httpOnly cookies.
+- Feed, blog, bookmark, follow, notification, profile, settings, and account lifecycle operations use API endpoints.
+- The client keeps limited UI state and profile/session cache data in local storage. The feed can show local mock stories if its API request fails; server-backed blog flows use API data.
+- Feed search/topic filtering is client-side over loaded content; there is no server search endpoint.
+- User markdown is escaped and URL schemes are restricted before rendering.
 
 ### API (`apps/server`)
 
-Bun runs Express 5 with TypeScript. `src/index.ts` configures credentialed CORS, request logging, JSON parsing (1 MB cap), cookie parsing, static `/uploads`, Swagger UI, rate limiting (300 req/min API-wide; tighter 20-per-10-min limit on auth endpoints), `/api` routes, and centralized error handling, followed by graceful shutdown on SIGTERM/SIGINT (drain connections, close the DB pool). The routes are grouped into:
+`src/index.ts` configures credentialed CORS, Pino request logging, JSON parsing with a 1 MB limit, cookie parsing, static `/uploads`, Swagger UI, a general API rate limiter, mounted `/api` routers, centralized errors, and graceful shutdown.
 
-- `domains/auth`: signup, OTP request/verification, refresh, session, logout, and protected onboarding.
-- `domains/user`: `/user/me`, public profiles by handle, follow/unfollow, the following list, avatar upload (multer → disk), and protected profile update.
-- `domains/blog`: full draft/publish/bookmark/schedule endpoints (see [API.md](./API.md)).
+Domains:
 
-The server uses controller/service/repository classes in these domains. Request bodies on write endpoints are validated with zod (`core/validation/validation.ts`). PostgreSQL access is through `pg` and a connection pool. Migrations are applied by `bun run migrate` (`src/scripts/migrate.ts`). Redis is used by BullMQ for the email and blog-publish jobs; there is no Redis response cache.
+- `auth`: signup, OTP, session restore, refresh rotation, logout, and onboarding.
+- `user`: own/public profiles, profile updates, avatar upload, follow graph, followers, suggestions, settings, and account deletion.
+- `blog`: drafts, published feed, Following feed, author feed, bookmarks, scheduling, and writer counts.
+- `notification`: list, unread count, read operations, and clear.
+
+Write validation is implemented for auth, onboarding, blog create/update/publish, and settings. `PATCH /user/edit-profile` currently passes its request body to service-level validation rather than the shared Zod parser. PostgreSQL access uses `pg`; migrations live under `src/core/database/migrations` and are applied with `bun run migrate`.
 
 ### Shared package (`packages/shared`)
 
-Exports TypeScript request/response DTOs shared by client and server. It is not a generated runtime validation or API client package.
+Exports request/response DTOs, settings constants, and shared domain types. It provides compile-time contracts, not runtime validation or a generated API client.
 
-### Email worker
+### Worker (`apps/server/src/worker.ts`)
 
-`src/worker.ts` starts BullMQ workers for the `email` and `blog-publish` queues. `send-otp` delivers the verification code through Resend; `blog-publish` flips scheduled drafts live at their due time. Queue configuration specifies three attempts with exponential backoff; email jobs run up to ten concurrently. The worker process shuts down cleanly (worker `close()` + Redis `quit()`).
+Runs three BullMQ workers in a separate process:
 
-## 3. Implemented request flows
+- `email`: sends OTP messages through Resend (concurrency 10).
+- `blog-publish`: publishes due scheduled drafts.
+- `notification-fanout`: inserts post notifications for followers in batches (concurrency 3).
 
-### Signup and login
+The worker closes its workers and Redis connection on SIGTERM/SIGINT.
 
-1. The client posts a name and email to `POST /api/auth/sign-up`.
-2. The API creates a `users` row in PostgreSQL.
-3. The client requests an OTP; the API stores a bcrypt hash and enqueues the email job in Redis.
-4. The user verifies the OTP. The API consumes the active OTP, creates a unique handle on first login, and issues access and refresh JWTs as httpOnly cookies.
-5. On startup, the client checks `GET /api/auth/session`. Authenticated requests attach cookies; the client retries once after a 401 by calling the refresh endpoint.
+## 3. Key request flows
 
-**Important development limitation:** OTP generation is currently hard-coded to `0000`, and verification accepts `0000` as a bypass. Do not treat this auth flow as production-ready until that behavior is removed and tested.
+### Authentication
 
-### Onboarding
+The client creates an account, requests an OTP, and verifies it. The API stores an OTP hash, enqueues email delivery, consumes the OTP, generates a handle if needed, and issues access/refresh JWT cookies. The access cookie is sent to API routes; the path-scoped refresh cookie is used for session restore, refresh, and logout. On an authenticated request's 401, the client attempts one single-flight refresh and retries.
 
-The protected `POST /api/auth/onboard` endpoint stores `fav_genre`, optional avatar and bio, and marks onboarding complete. The client requires at least one selected genre but does not block navigation when the API call fails, so local completion is not proof of server persistence.
+**Critical development limitation:** OTP generation and verification currently use the fixed value `0000`; this is not production-ready.
 
-### Reading and profiles
+### Publishing and notifications
 
-The feed is server-backed (`GET /blogs?page&limit`) with real pagination; bookmarks persist in `blog_bookmarks`. Profile pages read real data — own profiles from `/user/me` + writer stats, visitors from `GET /user/:handle` + `GET /blogs?author=<handle>` — and the follow button writes through the follow API. Search and topic filtering operate over the loaded feed client-side.
+New posts are drafts. Immediate publishing changes the post state and enqueues follower fan-out. Scheduling stores `scheduled_publish_at` and enqueues a delayed job; the worker checks and publishes the due draft, then enqueues fan-out. Notification event keys are unique in PostgreSQL to make retries idempotent.
 
-The profile edit form persists through `PATCH /api/user/edit-profile` (including the display name), and avatars upload via `POST /api/user/avatar` (multer → disk, URL stored in the DB, served from `/uploads`).
+### User settings and account lifecycle
+
+`GET/PUT /api/user/settings` reads/writes one complete snapshot; the settings row and `users.fav_genre` are stored in PostgreSQL. These preferences are persisted, but the client has not yet wired most of them into feed selection, reader styling, or notification delivery. `DELETE /api/user/account` removes the account in a transaction and relies on foreign-key cascades for related content, sessions, follows, bookmarks, and notifications.
 
 ## 4. Data and infrastructure
 
 The checked-in migrations create:
 
-- `users`: name, email, onboarding fields, handle, website, handle-lock timestamp.
-- `login_otps`: OTP hashes, expiry and revocation timestamps.
-- `refresh_tokens`: hashes of refresh JWTs, expiry and revocation timestamps.
-- `blogs`: title, description, images, markdown `content`, `status` (draft/published), `published_at`, `scheduled_publish_at`.
-- `blog_bookmarks`: viewer ↔ blog unique pairs.
-- `user_follows`: follower ↔ following unique pairs (no self-follow).
+- `users`, onboarding/profile fields, and saved `user_settings`
+- `login_otps` and hashed `refresh_tokens`
+- `blogs` with draft/published state and scheduled-publish time
+- `blog_bookmarks` and `user_follows`
+- `notifications` with unique event keys and unread indexes
 
-Handle changes are reserved-word checked and unique; unknown-email OTP responses are intentionally indistinguishable from wrong-OTP responses (enumeration defense).
+Redis is used for BullMQ queues; it is not an API response cache. Avatars are written to local disk and served at `/uploads`; Compose shares the server's upload volume, but local filesystem storage is not a scalable or externally durable media solution.
 
-Docker Compose defines PostgreSQL (migrations mounted as init scripts), Redis, API, worker, and Nginx/client services. The client Nginx configuration provides SPA fallback and proxies `/api/`, `/docs/`, and `/uploads/`; uploads live in the shared `uploads_data` volume. GitHub Actions CI (`.github/workflows/ci.yml`) runs strict root typecheck, `bun test`, and the client build. TLS termination, a public CDN, object storage, backups, deployment, and production monitoring are not configured by the checked-in Compose file.
+The migration runner tracks applied SQL filenames in a `migrations` table. PostgreSQL's Docker entrypoint applies SQL files only on first initialization of an empty data directory; use the runner for an existing database. The application does not automatically invoke the migration runner at API startup.
 
-## 5. Future architecture (not implemented)
+## 5. Known gaps
 
-Comments, tags/likes notifications, image hosting for blog bodies, recommendation jobs, cache usage, and production deployment controls remain future work. Keep these out of the description of current runtime behavior until they are implemented and verified.
+- Fixed OTP `0000` blocks production readiness.
+- Saved preference switches are persisted but are not generally applied to feed selection, reading appearance, or notification/email delivery.
+- No comments, replies, likes, tags, server-side search, recommendation engine, analytics, or public anonymous read API.
+- Swagger UI is mounted, but endpoint annotations are incomplete.
+- Compose does not provide production TLS, secret management, backups, external media storage, or monitoring.

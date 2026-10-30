@@ -1,102 +1,95 @@
 # Quill
 
-Quill is a minimal, Medium-flavoured blog publishing and reading platform — people sign up passwordlessly (email OTP), pick topics they care about, and get a quiet feed. Authors write, share posts, and manage their profile; discovery, engagement, and scale concerns are documented in [`docs/System-Design.md`](docs/System-Design.md).
+Quill is a writing and reading platform built as a Bun-workspace monorepo. The current app supports passwordless email sign-in, onboarding, profile management, publishing and scheduling markdown posts, server-backed feeds, follows, bookmarks, in-app notifications, saved reading preferences, and account deletion.
 
-**Current status:** signup/OTP/session APIs and onboarding/profile endpoints exist, but OTP is hard-coded to `0000`. The feed and profile experience remains a client-side prototype using mock data and local storage; the blog scaffold is not wired to HTTP routes. See the [PRD](docs/PRD.md) for implementation status.
+> **Development and launch note:** OTP generation and verification currently use the fixed code `0000`. Do not deploy this authentication flow to production until that test behavior is removed. Compose is a self-hosting/development setup, not a production deployment configuration.
 
-## Tech Stack
+## Stack
 
 | Layer | Choice |
 |---|---|
-| **Frontend** | React 19 + TypeScript + Tailwind CSS v4 + Vite |
-| **Backend** | Express 5 + TypeScript (OOP, domain-driven) on Bun |
-| **Database** | PostgreSQL 16 |
-| **Cache / Queue** | Redis 7 + BullMQ (background email jobs) |
-| **Email** | Resend |
-| **Package manager** | Bun (monorepo via workspaces) |
-| **Containerization** | Docker + Docker Compose (multi-stage builds) |
+| Client | React 19, TypeScript, React Router 7, Tailwind CSS 4, Vite |
+| API | Express 5 + TypeScript on Bun |
+| Database | PostgreSQL 16 (`pg`) |
+| Background jobs | Redis 7 + BullMQ |
+| Email | Resend |
+| Validation / logging | Zod, Pino |
+| Package manager | Bun workspaces |
+| Containers | Docker Compose, Nginx |
 
-## Monorepo Structure
+## Repository
 
-```
+```text
 quill/
 ├── apps/
-│   ├── client/     → React (TSX) + Tailwind, domain-driven feature folders  [README](apps/client/README.md)
-│   └── server/     → Express + TS, controller/service/repository per domain [README](apps/server/README.md)
+│   ├── client/       React SPA                           [README](apps/client/README.md)
+│   └── server/       Express API and BullMQ workers      [README](apps/server/README.md)
 ├── packages/
-│   └── shared/     → shared TypeScript DTO types                            [README](packages/shared/README.md)
-├── scripts/        → setup.sh, run.sh                                       [README](scripts/README.md)
+│   └── shared/       Shared TypeScript DTOs               [README](packages/shared/README.md)
+├── scripts/          Local helper scripts                 [README](scripts/README.md)
+├── docs/             Product, API, and system docs         [index](docs/README.md)
 ├── docker-compose.yml
-├── docs/
-│   ├── PRD.md
-│   ├── Architecture.md
-│   ├── System-Design.md
-│   └── API.md
 └── CHANGE-LOG.md
 ```
 
-## Core Features
+## Current functionality
 
-**Implemented today**
+- Email OTP signup/login with httpOnly access and rotating refresh cookies; logout can revoke the current device or all sessions.
+- Onboarding, editable profile and handle, multipart avatar uploads, visitor profiles, follow/follower lists, and follow suggestions.
+- Markdown post drafts, editing, immediate or scheduled publishing, paginated For You and Following feeds, and persistent bookmarks.
+- In-app notifications for new followers and posts from followed writers.
+- Settings API for favorite topics, feed-tab preference, reading appearance, and notification preferences; settings are stored, though most preferences are not yet applied elsewhere in the client or notification delivery.
+- Self-service account deletion with dependent data removed through database cascades.
 
-- Passwordless auth — sign up, email OTP login, JWT access + rotating refresh tokens, logout
-- Auto-generated unique `@handle` on first login
-- Onboarding (genres + avatar + bio) can be persisted through the API; client continues locally if the API call fails
-- Profile editing UI (browser-local only; not connected to the profile API)
-- Token refresh with single-flight protection and automatic retry on 401
+The client uses the server for these core features. Search and topic filtering are client-side over the currently loaded feed, and selected local-storage values still support UI state/cache behavior. See the [PRD](docs/PRD.md) and [API reference](docs/API.md) for precise behavior and limitations.
 
-**Scaffolded / in progress**
+## Getting started
 
-- Blog CRUD (repository partial, service/controller/routes empty)
-- Personalized "For You" / "Following" feed (frontend mocked in `apps/client/src/data`)
-- Swagger docs (spec exists, annotations not yet written)
-
-## Getting Started (local dev)
+Prerequisites: Bun 1.3+, Docker Compose (or local PostgreSQL and Redis), and a Resend API key. Server startup validates `DATABASE_URL`, `REDIS_URL`, a JWT secret of at least 32 characters, and `RESEND_API_KEY`.
 
 ```bash
 git clone https://github.com/AritraC1/quill.git
 cd quill
-cp .env.example .env          # fill in JWT_SECRET (32+ chars) and RESEND_API_KEY
-bun install                   # or: docker compose up --build
-bun run dev                   # client + server + worker
+cp .env.example .env
+# Set DATABASE_URL, REDIS_URL, JWT_SECRET, RESEND_API_KEY, EMAIL_FROM.
+bun install
+bun run migrate
 ```
 
-### Docker (full stack)
+In separate terminals, run `bun run dev` for the client and API and `bun run dev:worker` for background jobs. The client is served by Vite (default `http://localhost:5173`) and the API by Express (`http://localhost:3000`). The worker is required for OTP email, scheduled publishing, and notification fan-out. If you use Docker Compose, PostgreSQL applies the migration SQL files when it initializes a new data volume; existing volumes do not automatically rerun those init scripts.
+
+### Docker Compose
 
 ```bash
 cp .env.example .env
+# Set JWT_SECRET (32+ characters) and RESEND_API_KEY before starting.
 docker compose up --build
 ```
 
-This starts:
+| Service | Host access | Purpose |
+|---|---|---|
+| `client` | `http://localhost:80` | Nginx SPA and reverse proxy |
+| `server` | Internal port 3000 | Express API, Swagger UI and uploaded assets |
+| `worker` | Internal only | OTP email, scheduled publishing, notification fan-out |
+| `postgres` | `localhost:5432` | Persistent application data |
+| `redis` | Internal only | BullMQ queue backend |
 
-| Service    | Port | Description                         |
-|------------|------|-------------------------------------|
-| `client`   | 80   | Static SPA served via nginx         |
-| `server`   | 3000 (internal) | Express API (also at `/docs` Swagger UI; proxied by the client) |
-| `worker`   | —    | BullMQ background job processor     |
-| `postgres` | 5432 | Primary database                    |
-| `redis`    | internal 6379 | BullMQ queue backend              |
+The Compose file has development-friendly PostgreSQL defaults and publishes PostgreSQL on the host. Set strong credentials and appropriately restrict access before using it beyond a trusted local environment.
 
-## Scripts (from root)
+## Root commands
 
 ```bash
-bun run dev:client     # run client only
-bun run dev:server     # run server only
-bun run dev:worker     # run worker only
-bun run dev            # run all workspaces
-bun run build          # build all workspaces
-bun run test           # run all tests (server has Bun tests)
+bun run dev:client
+bun run dev:server
+bun run dev:worker
+bun run dev
+bun run migrate
+bun run build
+bun run test
+bun run test:server
+bun run test:client
 ```
 
-## Documentation
+`bun run dev` starts workspaces with a `dev` script (client and API); it does not start the worker.
 
-| Document | Contents |
-|---|---|
-| [`docs/PRD.md`](docs/PRD.md) | product requirements, scope, implementation status |
-| [`docs/Architecture.md`](docs/Architecture.md) | implemented components, request flows, deployment topology |
-| [`docs/System-Design.md`](docs/System-Design.md) | current infrastructure, data paths, and future operational work |
-| [`docs/API.md`](docs/API.md) | full REST API reference |
-| [`CHANGE-LOG.md`](CHANGE-LOG.md) | chronological change log |
-
----
+See the [documentation index](docs/README.md), [API reference](docs/API.md), [architecture](docs/Architecture.md), [system design](docs/System-Design.md), and [change log](CHANGE-LOG.md).

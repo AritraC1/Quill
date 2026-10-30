@@ -1,66 +1,81 @@
 # Quill — System Design
 
-This document separates implemented design from proposals. No throughput, user-capacity, or production-readiness target has been load-tested.
+This document records the current system and operational gaps. No capacity, throughput, or service-level target has been load-tested.
 
 ## 1. Current deployment topology
 
 The checked-in `docker-compose.yml` defines:
 
-| Service | Current role | Exposure |
+| Service | Role | Exposure |
 |---|---|---|
-| `client` | Nginx serves the Vite SPA and proxies `/api/` and `/docs/` | Host port 80 |
-| `server` | Express API | Internal Compose network, container port 3000 |
-| `worker` | BullMQ OTP email processor | Internal Compose network |
-| `postgres` | PostgreSQL 16 persistent application data | Internal network and host port 5432 |
-| `redis` | Redis 7 queue backend | Internal Compose network |
+| `client` | Nginx SPA and reverse proxy for `/api/`, `/docs/`, `/uploads/` | Host port 80 |
+| `server` | Express API | Compose network, container port 3000 |
+| `worker` | BullMQ email, scheduled-publish, notification-fanout workers | Compose network |
+| `postgres` | Persistent application database | Host port 5432 and Compose network |
+| `redis` | BullMQ backend | Compose network |
 
-This configuration is suitable as a Compose-based development/self-hosting starting point. It does not configure HTTPS, a reverse-proxy certificate flow, CDN, object storage, automated backups, deployment automation, or production observability. The sample Compose defaults for database credentials are development conveniences; deployers must set strong secrets and restrict database access.
+This is a local/self-hosting topology, not a hardened production deployment. It does not configure HTTPS, a managed secret store, automated backups, external object storage, monitoring, or deployment automation. Compose includes development-friendly PostgreSQL defaults and exposes port 5432; change credentials and network exposure before use beyond a trusted local environment.
 
-## 2. Data and request paths
+## 2. Data paths
 
-PostgreSQL is the source of truth for users, OTP records, refresh-token hashes, and the initial `blogs` table. Migrations do not currently define posts, comments, tags, follows, reading history, likes, bookmarks, or recommendation data.
+### Authentication
 
-Redis is currently used as BullMQ's backing store for email delivery. The code does not currently cache API responses or feed results.
+The browser sends httpOnly cookies to the API. PostgreSQL stores OTP hashes and refresh-token hashes; Redis/BullMQ carries OTP email jobs, which the worker sends through Resend. The API rotates refresh tokens and can revoke one session or all sessions.
 
-The auth request path is:
+**Critical limitation:** OTP issuance and verification currently use the fixed code `0000`. Do not expose this authentication flow publicly.
 
-1. The client calls the Express API with credentials enabled.
-2. Express reads the access token from an httpOnly cookie (or a Bearer authorization header for programmatic clients).
-3. OTP and refresh-token state is persisted in PostgreSQL; OTP emails are enqueued to BullMQ in Redis and sent by the separate worker through Resend.
-4. The client restores auth state through the refresh cookie at `/api/auth/session` and rotates credentials after an authenticated request gets a 401.
+Cookies use `SameSite=Lax`; `Secure` is enabled in production. CORS allows the configured `CLIENT_URL` with credentials. Review CSRF protections, origins, TLS termination, and cookie settings for the intended deployment before exposing state-changing browser endpoints.
 
-### Auth and launch limitations
+### Posts and feeds
 
-- OTP generation is hard-coded to `0000`; verification accepts that value as a bypass.
-- No auth or write-endpoint rate limiting is configured.
-- The access and refresh cookies are httpOnly and use `SameSite=Lax`; `Secure` is enabled in production. CORS allows the configured `CLIENT_URL` with credentials.
-- There is no CSRF token mechanism. Review deployment origins and cookie behavior before exposing state-changing endpoints to a production browser client.
-- Profile API SQL refers to `website` and profile logic refers to `handle_changed_at`, neither of which is added by the checked-in migrations. The current profile form uses local storage instead.
+PostgreSQL is the source of truth for drafts, published posts, scheduled publish timestamps, bookmarks, and follows. The paginated For You feed currently returns published posts chronologically; the Following feed limits results to authors the reader follows. Search and topic filtering occur in the client over loaded results. There is no feed cache or recommendation pipeline.
 
-## 3. Background processing
+### Notifications
 
-The only queue job implemented today is OTP email delivery:
+Follow events create a new-follower notification. Publishing enqueues a fan-out job that writes one new-post notification per follower in batches of 500. Unique event keys prevent duplicate notifications on retries. The navbar polls unread count; there is no SSE/WebSocket transport or email notification/digest delivery.
 
-| Job | Trigger | Behavior |
+### Settings
+
+The settings API persists topic choices, default feed tab, text size, theme, and notification switches. Currently these values are stored but most are not wired into the corresponding feed, reader, or delivery behavior. Treat them as saved preferences, not active policies.
+
+### Avatars
+
+Avatar files are checked for supported image type and a 5 MB limit, written to the API's local `uploads/` directory, and served through `/uploads`. Compose uses a named volume for server uploads. This is not object storage, has no CDN/image processing, and requires an explicit backup and persistence strategy outside the sample topology.
+
+## 3. Background jobs
+
+| Queue / worker | Trigger | Behavior |
 |---|---|---|
-| `send-otp` | OTP request | Resend delivery; three attempts with exponential backoff; worker concurrency 10 |
+| `email` | OTP request | Resend OTP email; three job attempts with exponential backoff; worker concurrency 10 |
+| `blog-publish` | Scheduled publish request | Delayed job publishes a still-due draft; scheduling is limited to 24 days |
+| `notification-fanout` | Newly published post | Inserts follower notifications in batches; idempotent by database event key |
 
-The codebase does not implement welcome-email enqueueing, password-reset email, comment notifications, image processing, recurring digest jobs, or feed/recommendation jobs.
+The `worker` service starts all three workers and closes them plus Redis on shutdown. Welcome emails, digests, replies, and email notification preferences are not implemented.
 
-## 4. Product features and proposed data design
+## 4. Database and migrations
 
-The current feed and profile screens are client-side prototypes over mock data. Topic filtering, text search, “For you”/“Following” tabs, bookmarks, and follows are not backed by server APIs. User-selected onboarding genres are stored in the `users` table when the onboarding API succeeds, but no feed uses them.
+PostgreSQL stores user/profile/settings data, authentication state, posts, bookmarks, follows, and notifications. Redis is the queue backend, not a response cache.
 
-When server-backed reading features are implemented, the schema and endpoints should be designed around concrete requirements for publishing, visibility, pagination, comments, follows, and engagement. A personalized feed could initially rank published posts using onboarding topics and later reading signals, but no affinity tables, ranking job, or feed cache currently exists. Treat collaborative filtering and precomputed recommendations as future options, not current architecture.
+Numbered SQL files under `apps/server/src/core/database/migrations/` define the schema through migration `012_user_settings.sql`. `bun run migrate` applies unapplied files in filename order and records their names. Compose mounts the migration directory into PostgreSQL's init directory; those scripts run only when the database data directory is initialized for the first time, not on every container start. Existing volumes should use the migration runner.
 
-## 5. Scaling and operational work (future)
+## 5. Security and operational caveats
 
-There are no measured capacity figures or configured scale triggers in the repository. Before selecting production sizing or scaling thresholds:
+- Fixed OTP behavior must be removed before production.
+- Rate limiting is in-process/IP-based: 300 requests per minute on `/api`, plus a 20-failure/10-minute auth limiter on signup, OTP request, and OTP verification. These defaults are not a substitute for deployment-level controls.
+- Access and refresh cookies are httpOnly; `SameSite=Lax`, with `Secure` in production.
+- API JSON bodies are limited to 1 MB; avatar uploads are separately limited to 5 MB.
+- Local disk avatar storage requires durable-volume planning and backup.
+- No health endpoint, metrics, tracing, alerting, backup/restore automation, or load-test results are provided.
+- Account deletion is implemented and cascades user-associated content and identity records; retention/legal policy still needs product/operator definition.
 
-1. Define expected traffic and service-level objectives.
-2. Add metrics for API latency/errors, database pool saturation, queue age/failures, and resource use.
-3. Load-test actual API and database paths, then size the deployment from observed results.
-4. Add and test backup/restore procedures, secret management, HTTPS, and alerting.
-5. Scale components independently only when measurements identify a bottleneck.
+## 6. Scaling and future work
 
-Kubernetes, separate database hosts, read replicas, a CDN, object storage, and microservice decomposition are not configured and should be evaluated only against verified operational needs.
+There are no measured capacity figures or configured scale triggers. Before production sizing:
+
+1. Define traffic expectations and service-level objectives.
+2. Instrument API latency/errors, database-pool saturation, job age/failures, and resource use.
+3. Load-test actual database, API, and queue paths.
+4. Test migration, backup, restore, and account-deletion behavior.
+5. Select external object storage, deployment topology, and scaling strategy from measured needs.
+
+Kubernetes, read replicas, a CDN, microservice decomposition, event streaming, and recommendation precomputation are not configured. Evaluate them only when requirements and measurements justify them.
