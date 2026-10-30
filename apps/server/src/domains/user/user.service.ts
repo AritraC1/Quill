@@ -100,7 +100,7 @@ class UserService {
       const name = data.name.trim();
 
       if (name.length < 2 || name.length > 50) {
-        throw new BadRequestError("Name must be 2–50 characters");
+        throw new BadRequestError("Name must be 2-50 characters");
       }
 
       data.name = name;
@@ -112,7 +112,7 @@ class UserService {
 
       if (!handle || !HANDLE_PATTERN.test(handle)) {
         throw new BadRequestError(
-          "Handles are 3–30 characters: lowercase letters, numbers, underscores and hyphens",
+          "Handles are 3-30 characters: lowercase letters, numbers, underscores and hyphens",
         );
       }
 
