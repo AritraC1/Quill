@@ -11,8 +11,9 @@ import {
   useLocation,
   useSearchParams,
 } from "react-router-dom";
-import { PenSquare, Search, Bell, Bookmark, Home, X } from "lucide-react";
+import { PenSquare, Search, Bookmark, Home, X } from "lucide-react";
 import { useAuth } from "../../features/auth";
+import { NotificationBell } from "../../features/notifications";
 import { loadStoredUser } from "../../lib/user-store";
 import { getInitials } from "../../lib/initials";
 import { assetUrl } from "../../features/auth/api/auth.api";
@@ -153,14 +154,8 @@ export const AppShell = ({
               <span>Write</span>
             </Link>
 
-            {/* Notifications bell */}
-            <button
-              type="button"
-              className="hidden sm:flex p-1.5 text-[#5C625E] hover:text-[#1B1F1C] transition-colors relative"
-              title="Notifications"
-            >
-              <Bell className="w-5 h-5 stroke-[1.6]" />
-            </button>
+            {/* Notifications bell — unread badge, dropdown with mark-read/clear */}
+            <NotificationBell />
 
             {/* Bookmarks icon — deep-links to the Saved tab on your profile */}
             <Link
@@ -208,7 +203,7 @@ export const AppShell = ({
                   </div> */}
 
                   <Link
-                    to=""
+                    to="/settings"
                     onClick={() => setDropdownOpen(false)}
                     className="flex items-center px-4 py-2 text-[14px] text-[#E6E2D8] hover:bg-white/10 hover:text-white transition-colors"
                   >

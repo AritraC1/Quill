@@ -32,5 +32,8 @@ export function useStoredSet(key: string, initial: string[] = []) {
     [],
   );
 
-  return { items, has, set };
+  // Overwrite the whole set — used to reconcile the cache with server truth
+  const replace = useCallback((ids: string[]) => setItems(ids), []);
+
+  return { items, has, set, replace };
 }

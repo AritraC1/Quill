@@ -10,3 +10,10 @@ export const emailQueue = new Queue("email", { connection: redisConfig });
 export const blogPublishQueue = new Queue("blog-publish", {
   connection: redisConfig,
 });
+
+// Follower fan-out for freshly published blogs — the worker inserts one
+// "new post" notification per follower in batches. Enqueued (never awaited
+// fan-out) by the instant publish path and by the scheduled-publish worker.
+export const notificationFanoutQueue = new Queue("notification-fanout", {
+  connection: redisConfig,
+});

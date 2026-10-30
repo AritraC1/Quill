@@ -38,4 +38,11 @@ export const API_ROUTES = {
     PUBLISHED: "/blogs/published",
     BOOKMARKS: "/blogs/bookmarks",
   },
+  // Notification Routes (bell in the navbar)
+  NOTIFICATIONS: {
+    LIST: "/notifications", // DELETE clears the whole list
+    UNREAD_COUNT: "/notifications/unread-count",
+    READ: (id: string) => `/notifications/${id}/read`,
+    READ_ALL: "/notifications/read-all",
+  },
 } as const;

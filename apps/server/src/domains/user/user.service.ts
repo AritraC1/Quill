@@ -6,6 +6,7 @@ import type {
   UserProfileDTO,
 } from "@quill/shared";
 import UserRepository from "./user.repository";
+import NotificationService from "../notification/notification.service";
 import type { UserModel } from "./user.model";
 import {
   BadRequestError,
@@ -46,9 +47,11 @@ const RESERVED_HANDLES = new Set([
 
 class UserService {
   private userRepo: UserRepository;
+  private notificationService: NotificationService;
 
   constructor() {
     this.userRepo = new UserRepository();
+    this.notificationService = new NotificationService();
   }
 
   // The signed-in user's profile — bio is whatever was written during
@@ -205,7 +208,13 @@ class UserService {
       throw new BadRequestError("You cannot follow yourself");
     }
 
-    await this.userRepo.followUser(followerId, target.id);
+    // Only a *new* follow notifies the writer — a repeat follow is a no-op
+    // (the insert is idempotent) and must not create the event again
+    const inserted = await this.userRepo.followUser(followerId, target.id);
+    if (inserted) {
+      await this.notificationService.notifyNewFollower(followerId, target.id);
+    }
+
     const followers = await this.userRepo.countFollowers(target.id);
 
     return { handle: target.handle ?? handle, isFollowing: true, followers };

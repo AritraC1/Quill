@@ -4,6 +4,8 @@ import { Sparkles, Users, Loader2 } from "lucide-react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { StoryCard } from "../../../components/ui/StoryCard";
 import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
+import { useStoredSet } from "../../../hooks/useStoredSet";
+import { DEFAULT_FOLLOWING } from "../../../data/mockProfiles";
 import Empty  from "../components/Empty";
 import FollowButton from "../components/FollowButton";
 import {
@@ -12,7 +14,11 @@ import {
   bookmarkBlogApi,
   deleteBlogApi,
 } from "../../blog/api/blog.api";
-import { setFollowApi, listSuggestionsApi } from "../../profile/api/profile.api";
+import {
+  setFollowApi,
+  listSuggestionsApi,
+  listFollowingApi,
+} from "../../profile/api/profile.api";
 import type { BlogResponseDTO } from "@quill/shared";
 import type { Story } from "../../profile/types/story.types";
 import { blogToStory, isServerBlogId } from "../../blog/lib/blog-story";
@@ -75,6 +81,14 @@ const FeedPage = () => {
       followers: number;
     }>
   >([]);
+
+  // Shared follow cache — ProfilePage and FollowersModal write to the same
+  // key, so a handle in here is followed and tapping it unfollows
+  const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
+  // Follow requests in flight — blocks double taps that could settle
+  // out of order (overlapping follow/unfollow requests)
+  const [pendingFollows, setPendingFollows] = useState<string[]>([]);
+  const pendingFollowsRef = useRef<Set<string>>(new Set());
 
   const fetchFeedPage = useCallback(
     async (
@@ -151,6 +165,25 @@ const FeedPage = () => {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Reconcile the local follow cache with server truth once on mount, so a
+  // suggestion the user already follows shows "Following" (and a tap on it
+  // unfollows) instead of trusting a possibly stale localStorage set
+  useEffect(() => {
+    let cancelled = false;
+    listFollowingApi()
+      .then((users) => {
+        if (cancelled) return;
+        following.replace(
+          users.map((u) => u.handle).filter((h): h is string => Boolean(h)),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Append the next server page for "For you"
@@ -352,19 +385,47 @@ const FeedPage = () => {
       .catch(() => showToast("Could not delete the story"));
   };
 
+  // Follow/unfollow from "Who to follow". The direction MUST come from the
+  // shared follow cache, not from suggestions membership — suggestions can
+  // include writers the user already follows, which made the old
+  // `!suggestions.some(...)` check invert every tap into an unfollow.
   const toggleFollow = async (handle: string) => {
-    const on = !suggestions.some((s) => s.handle === handle);
+    if (!handle) return;
+    // Ignore taps while this writer already has a request in flight —
+    // overlapping follow/unfollow calls can settle out of order
+    if (pendingFollowsRef.current.has(handle)) return;
+    const on = !following.has(handle);
+    pendingFollowsRef.current.add(handle);
+    setPendingFollows((prev) => [...prev, handle]);
+    // Optimistic: flip the cache immediately so the button label matches the tap
+    following.set(handle, on);
     try {
-      await setFollowApi(handle, on);
+      const result = await setFollowApi(handle, on);
+      // Settle the cache to the server's authoritative answer
+      following.set(result.handle ?? handle, result.isFollowing);
       showToast(
-        on
+        result.isFollowing
           ? `Following ${suggestions.find((s) => s.handle === handle)?.name ?? handle}`
           : `Unfollowed ${suggestions.find((s) => s.handle === handle)?.name ?? handle}`,
       );
       // Refresh suggestions after follow/unfollow
-      listSuggestionsApi(5).then(setSuggestions);
+      listSuggestionsApi(5).then(setSuggestions).catch(() => {});
+      // The already-loaded Following feed knows nothing about this follow —
+      // re-fetch page 1 so the new followee's stories appear right away
+      fetchFollowingFeedPage(1).then((res) => {
+        if (!res) return;
+        setFollowingBlogs(res.items);
+        setFollowingTotal(res.total);
+        setFollowingPage(1);
+        setFollowingServerDown(false);
+      });
     } catch {
+      // Revert the optimistic change on failure
+      following.set(handle, !on);
       showToast("Could not update follow");
+    } finally {
+      pendingFollowsRef.current.delete(handle);
+      setPendingFollows((prev) => prev.filter((h) => h !== handle));
     }
   };
 
@@ -519,7 +580,8 @@ const FeedPage = () => {
                       </span>
                     </Link>
                     <FollowButton
-                      following={false}
+                      following={following.has(s.handle ?? "")}
+                      disabled={pendingFollows.includes(s.handle ?? "")}
                       onClick={() => void toggleFollow(s.handle ?? "")}
                     />
                   </li>

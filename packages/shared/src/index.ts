@@ -178,3 +178,47 @@ export interface BlogListQueryDTO {
   /** Optional author handle — narrows the feed to one writer's published blogs */
   author?: string;
 }
+
+// -------------- NOTIFICATIONS -------------- //
+
+/**
+ * The only notification events in Quill:
+ *  - "new_follower": someone follows a writer (recipient = the writer)
+ *  - "new_post":     a followed writer publishes a blog (recipient = follower)
+ */
+export type NotificationType = "new_follower" | "new_post";
+
+/** Who caused the event — the name shown in the rendered message */
+export interface NotificationActorDTO {
+  id: string;
+  name: string;
+  handle?: string | null;
+  avatar?: string | null;
+}
+
+/** The story behind a "new_post" notification (for deep-linking) */
+export interface NotificationBlogDTO {
+  id: string;
+  title: string;
+}
+
+/** One entry in the bell dropdown */
+export interface NotificationDTO {
+  id: string;
+  type: NotificationType;
+  actor: NotificationActorDTO;
+  blog: NotificationBlogDTO | null; // null for follow notifications
+  createdAt: string; // ISO
+  readAt: string | null; // null while unread (the badge counts these)
+}
+
+/** Page result of GET /notifications?page&limit */
+export interface NotificationListDTO {
+  items: NotificationDTO[];
+  total: number;
+}
+
+/** Result of GET /notifications/unread-count */
+export interface UnreadCountDTO {
+  count: number;
+}

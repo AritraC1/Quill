@@ -349,26 +349,98 @@ invalid or stale `publishAt`, or oversized `title`/`content`/`description`;
 Bookmark state lives in `blog_bookmarks` (unique per `(user_id, blog_id)`), so
 saved lists survive across devices.
 
-## 5. System and documentation routes
+## 5. Notifications (`/notifications`) — all authenticated
+
+In-app notifications for the navbar bell. There are exactly two events:
+
+| Event | Recipient | Message rendered by the client |
+|---|---|---|
+| A writer publishes a blog | Their followers | "Alex published a new story" |
+| Someone follows a writer | The writer being followed | "Sam started following you" |
+
+### `GET /notifications` — authenticated
+
+One page of the signed-in user's notifications, newest first. Query: `page`
+(default 1), `limit` (default 20, max 50). Each item carries `id`, `type`
+(`new_post` / `new_follower`), `actor` (`id`, `name`, `handle`, `avatar`),
+`blog` (`id`, `title`, only for `new_post`), `createdAt` and `readAt` (null
+while unread).
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "…",
+        "type": "new_post",
+        "actor": { "id": "…", "name": "Alex", "handle": "alex", "avatar": null },
+        "blog": { "id": "…", "title": "On Slow Reading" },
+        "createdAt": "2026-01-05T10:12:00.000Z",
+        "readAt": null
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+### `GET /notifications/unread-count`
+
+`{ "data": { "count": 3 } }` — the number shown on the bell badge (unread
+notifications only).
+
+### `PATCH /notifications/:id/read`
+
+Marks one notification read. `404` when the id is not an unread notification
+of the signed-in user.
+
+### `PATCH /notifications/read-all` / `DELETE /notifications`
+
+`read-all` marks everything read (`{ "data": { "count": 5 } }` — rows updated);
+`DELETE /notifications` clears the whole list for the signed-in user.
+
+### Notification lifecycle
+
+- Follow: created right after the follow row is actually inserted — a repeat
+  follow is a no-op and pings nobody.
+- Publish: fan-out is enqueued on the BullMQ queue `notification-fanout`
+  (`jobId: fanout:<blogId>`) in the instant-publish path and by the
+  scheduled-publish worker (`blog-publish`) the moment a blog actually flips
+  draft → published. The worker inserts one notification per follower in
+  batches of 500 (keyset pagination over `user_follows`).
+- Idempotency: every notification carries a deterministic `event_key`
+  (`follow:<follower>:<target>`, `publish:<blogId>:<recipient>`) enforced
+  `UNIQUE` in Postgres, so job retries and re-enqueues never duplicate.
+- Deletion: `actor_id`, `recipient_id`, and `blog_id` all reference with
+  `ON DELETE CASCADE`; de-deleting a user or blog removes its notifications.
+  Schema: `migrations/011_create_notifications.sql`. The client polls
+  `/notifications/unread-count` every 30 s (live streaming via SSE/WebSockets
+  is a future upgrade).
+
+## 6. System and documentation routes
 
 | Path | Method | Description |
 |---|---|---|
 | `/docs` | GET | Swagger UI; route files currently have no endpoint annotations |
 | `/health` | — | Not implemented |
 
-The API router is mounted at `/api`; `/auth/*`, `/user/*`, and `/blogs/*` are mounted.
+The API router is mounted at `/api`; `/auth/*`, `/user/*`, `/blogs/*`, and
+`/notifications/*` are mounted.
 
-## 6. Background email job
+## 7. Background jobs
 
 The API enqueues `send-otp` jobs on the BullMQ queue named `email`. `apps/server/src/worker.ts` starts a worker with concurrency 10.
 
-| Job | Payload | Retry behavior |
-|---|---|---|
-| `send-otp` | `{ "type": "otp", "to": "email", "code": "0000" }` | 3 attempts with exponential backoff, initial delay 5 seconds |
+| Job | Queue | Payload | Retry behavior |
+|---|---|---|---|
+| `send-otp` | `email` | `{ "type": "otp", "to": "email", "code": "0000" }` | 3 attempts with exponential backoff, initial delay 5 seconds |
+| `publish` | `blog-publish` | `{ "blogId": "…" }` | Delayed job for scheduled publishes; flips `draft` → `published`, then enqueues fan-out |
+| `fanout` | `notification-fanout` | `{ "blogId": "…", "authorId": "…" }` | Inserts one "published" notification per follower in 500-row batches; idempotent via unique event keys |
 
-The worker sends OTP email through Resend. No other job types are implemented.
+The email worker sends OTP email through Resend.
 
-## 7. Database tables
+## 8. Database tables
 
 | Table | Columns/role | Migration |
 |---|---|---|
@@ -383,6 +455,7 @@ The worker sends OTP email through Resend. No other job types are implemented.
 | `users.website`, `users.handle_changed_at` | Profile link + 6-month handle-lock clock | `008_user_website_handle_changed_at.sql` |
 | `blogs.scheduled_publish_at` | Scheduled-publish timestamp | `009_blog_scheduling.sql` |
 | `user_follows` | `follower_id` ↔ `following_id` unique pair (no self-follow), `created_at` | `010_user_follows.sql` |
+| `notifications` | `recipient_id`, `actor_id`, `blog_id`, `type`, unique `event_key`, `read_at`; unread index | `011_create_notifications.sql` |
 
 Migrations are plain, idempotent SQL files in `src/core/database/migrations/`,
 applied in filename order by the runner (`bun run migrate`,
@@ -418,6 +491,11 @@ applied in filename order by the runner (`bun run migrate`,
 | `listFollowingApi` | `GET /user/following` (profile Following sidebar) |
 | `uploadAvatarApi` | `POST /user/avatar` (multipart), then `PATCH /user/edit-profile` with the URL |
 | `assetUrl` | Resolves server-relative `/uploads/…` paths against the API origin |
+| `listNotificationsApi` | `GET /notifications?page&limit` (bell dropdown) |
+| `unreadCountApi` | `GET /notifications/unread-count` (polled every 30 s) |
+| `markNotificationReadApi` | `PATCH /notifications/:id/read` |
+| `markAllNotificationsReadApi` | `PATCH /notifications/read-all` |
+| `clearNotificationsApi` | `DELETE /notifications` ("Clear" in the bell) |
 
 The client write editor (`/write`, `/write/:id`) autosaves as a draft and only
 publishes when the Publish button is pressed; the feed and profile tabs render

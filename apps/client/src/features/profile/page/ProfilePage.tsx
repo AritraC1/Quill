@@ -62,6 +62,8 @@ const ProfileView = () => {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [followersOpen, setFollowersOpen] = useState(false);
+  // Follow request in flight — the button stays disabled until it settles
+  const [followPending, setFollowPending] = useState(false);
 
   const tabs = isOwn ? OWN_TABS : VISITOR_TABS;
   const requested = searchParams.get("tab");
@@ -303,12 +305,16 @@ const ProfileView = () => {
 
   // Real follow/unfollow through the API — optimistic button, server truth on settle
   const handleFollow = () => {
+    // One request at a time: rapid taps would send overlapping
+    // follow/unfollow calls and could settle the button out of order
+    if (followPending) return;
     const next = !isFollowing;
     if (isOwn) {
       // own view never renders the button; defensive local toggle only
       following.set(profileHandle, next);
       return;
     }
+    setFollowPending(true);
     // Keep the shared `quill_following` set in sync so the feed's Following
     // tab immediately shows this writer's blogs
     following.set(profileHandle, next);
@@ -336,7 +342,8 @@ const ProfileView = () => {
         // authoritative, but the cached set must not be left stale
         following.set(profileHandle, !next);
         toast.error("Could not update follow");
-      });
+      })
+      .finally(() => setFollowPending(false));
   };
 
   const handleDeleteDraft = (id: string) => {
@@ -482,8 +489,9 @@ const ProfileView = () => {
             <button
               type="button"
               onClick={handleFollow}
+              disabled={followPending}
               aria-pressed={isFollowing}
-              className={`mt-4 h-8 rounded-full px-4 text-[13px] font-medium border transition-colors ${
+              className={`mt-4 h-8 rounded-full px-4 text-[13px] font-medium border transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                 isFollowing
                   ? "border-[#1F3D2F] text-[#1F3D2F] hover:bg-[#1F3D2F]/5"
                   : "border-[#1F3D2F] bg-[#1F3D2F] text-white hover:bg-[#2A5240]"

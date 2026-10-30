@@ -1,8 +1,10 @@
 import "./jobs/email.job"; // side-effect: constructs the Worker
 import "./jobs/blog-publish.job"; // side-effect: constructs the Worker
+import "./jobs/notification-fanout.job"; // side-effect: constructs the Worker
 import { logger } from "./core/logger/logger";
 import { emailWorker } from "./jobs/email.job";
 import { blogPublishWorker } from "./jobs/blog-publish.job";
+import { notificationFanoutWorker } from "./jobs/notification-fanout.job";
 import redisConfig from "./core/config/redis.config";
 
 logger.info("BullMQ workers started");
@@ -18,6 +20,7 @@ const shutdown = async (signal: string) => {
     await Promise.all([
       emailWorker.close(),
       blogPublishWorker.close(),
+      notificationFanoutWorker.close(),
       redisConfig.quit(),
     ]);
     logger.info("Worker shut down cleanly");

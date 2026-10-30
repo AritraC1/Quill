@@ -19,6 +19,11 @@ interface FollowersModalProps {
   isOwn: boolean;
 }
 
+/**
+ * Wrapper: the content only mounts while the modal is open, so every open
+ * starts from the initial state (no manual reset inside an effect needed).
+ * `key={handle}` remounts the content if the profile changes while open.
+ */
 const FollowersModal = ({
   open,
   onClose,
@@ -26,31 +31,47 @@ const FollowersModal = ({
   handle,
   isOwn,
 }: FollowersModalProps) => {
+  if (!open) return null;
+
+  return (
+    <FollowersModalContent
+      key={handle}
+      onClose={onClose}
+      name={name}
+      handle={handle}
+      isOwn={isOwn}
+    />
+  );
+};
+
+const FollowersModalContent = ({
+  onClose,
+  name,
+  handle,
+  isOwn,
+}: Omit<FollowersModalProps, "open">) => {
   const [users, setUsers] = useState<FollowerDTO[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [isLoading, setIsLoading] = useState(true); // first page loads from mount
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const loadingRef = useRef(false); // guards the IntersectionObserver against double fetches
+  const loadingRef = useRef(true); // guards the IntersectionObserver against double fetches (first page is in flight from mount)
+  const [pendingFollowId, setPendingFollowId] = useState<string | null>(null);
+  const pendingFollowRef = useRef<string | null>(null); // synchronous double-tap guard
 
   // Keep the shared follow state in sync (the feed's Following tab reads it)
   const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
 
   const hasMore = users.length < total;
 
-  // First page — loaded fresh every time the modal opens
+  // First page — runs once on mount (the component is remounted on every open).
+  // setState only happens inside async callbacks.
   useEffect(() => {
-    if (!open) return;
     let cancelled = false;
 
-    loadingRef.current = true;
-    setIsLoading(true);
-    setUsers([]);
-    setTotal(0);
-    setPage(0);
     listFollowersApi(handle, 1, PAGE_LIMIT)
       .then((res) => {
         if (!cancelled) {
@@ -70,11 +91,11 @@ const FollowersModal = ({
     return () => {
       cancelled = true;
     };
-  }, [open, handle]);
+  }, [handle]);
 
   // Infinite scroll — the next page loads when the sentinel becomes visible
   useEffect(() => {
-    if (!open || !hasMore || isLoadingMore) return;
+    if (isLoading || !hasMore || isLoadingMore) return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
 
@@ -103,11 +124,10 @@ const FollowersModal = ({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [open, handle, hasMore, isLoadingMore, page]);
+  }, [handle, isLoading, hasMore, isLoadingMore, page]);
 
   // Close on Escape and lock the page behind the modal
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -117,18 +137,21 @@ const FollowersModal = ({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [open, onClose]);
-
-  if (!open) return null;
+  }, [onClose]);
 
   // Follow back — optimistic row update, reverted on failure
   const toggleFollow = (user: FollowerDTO) => {
     if (!user.handle) return;
+    // One request per row at a time: overlapping follow/unfollow taps can
+    // settle out of order and leave the button out of sync with the server
+    if (pendingFollowRef.current === user.id) return;
     const next = !user.isFollowing;
+    pendingFollowRef.current = user.id;
+    setPendingFollowId(user.id);
     setUsers((prev) =>
       prev.map((u) => (u.id === user.id ? { ...u, isFollowing: next } : u)),
     );
-    following.set(user.handle, next);
+    if (user.handle) following.set(user.handle, next);
     setFollowApi(user.handle, next)
       .then(() =>
         toast(next ? `Following ${user.name}` : `Unfollowed ${user.name}`, {
@@ -137,10 +160,16 @@ const FollowersModal = ({
       )
       .catch(() => {
         setUsers((prev) =>
-          prev.map((u) => (u.id === user.id ? { ...u, isFollowing: !next } : u)),
+          prev.map((u) =>
+            u.id === user.id ? { ...u, isFollowing: !next } : u,
+          ),
         );
-        following.set(user.handle, !next);
+        if (user.handle) following.set(user.handle, !next);
         toast.error("Could not update follow");
+      })
+      .finally(() => {
+        pendingFollowRef.current = null;
+        setPendingFollowId(null);
       });
   };
 
@@ -216,14 +245,21 @@ const FollowersModal = ({
                     <button
                       type="button"
                       onClick={() => toggleFollow(u)}
+                      disabled={pendingFollowId === u.id}
                       aria-pressed={u.isFollowing}
-                      className={`h-8 shrink-0 rounded-full border px-4 text-[13px] font-medium transition-colors ${
+                      className={`h-8 shrink-0 rounded-full border px-4 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                         u.isFollowing
                           ? "border-[#E6E2D8] text-[#1F3D2F] hover:bg-[#F0EDE4]"
                           : "border-[#1F3D2F] bg-[#1F3D2F] text-white hover:bg-[#2A5240]"
                       }`}
                     >
-                      {u.isFollowing ? "Following" : isOwn ? "Follow back" : "Follow"}
+                      {pendingFollowId === u.id
+                        ? "…"
+                        : u.isFollowing
+                          ? "Following"
+                          : isOwn
+                            ? "Follow back"
+                            : "Follow"}
                     </button>
                   ) : null}
                 </li>
@@ -233,11 +269,7 @@ const FollowersModal = ({
 
           {/* Sentinel for the next page */}
           {hasMore && !isLoading && (
-            <div
-              ref={sentinelRef}
-              className="h-px"
-              aria-hidden
-            />
+            <div ref={sentinelRef} className="h-px" aria-hidden />
           )}
           {isLoadingMore && (
             <p className="py-4 text-center text-[12px] text-[#8A8F8B]">

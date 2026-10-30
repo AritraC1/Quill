@@ -9,6 +9,7 @@ import type {
 } from "@quill/shared";
 import BlogRepository from "./blog.repository";
 import UserRepository from "../user/user.repository";
+import NotificationService from "../notification/notification.service";
 import type { BlogWithAuthorModel } from "./blog.model";
 import { blogPublishQueue } from "../../jobs/queue";
 import {
@@ -67,10 +68,12 @@ const MAX_SCHEDULE_DAYS = 24;
 class BlogService {
   private blogRepo: BlogRepository;
   private userRepo: UserRepository;
+  private notificationService: NotificationService;
 
   constructor() {
     this.blogRepo = new BlogRepository();
     this.userRepo = new UserRepository();
+    this.notificationService = new NotificationService();
   }
 
   // Deterministic BullMQ job id per blog, so rescheduling replaces the
@@ -168,6 +171,14 @@ class BlogService {
       if (!published) {
         throw new BadRequestError("Failed to publish blog");
       }
+
+      // The blog is now live — notify followers via the BullMQ fan-out
+      // worker (idempotent, never inside the publish request)
+      await this.notificationService.fanOutNewPost(
+        published.id,
+        published.user_id,
+      );
+
       return toBlogResponse(published);
     }
 

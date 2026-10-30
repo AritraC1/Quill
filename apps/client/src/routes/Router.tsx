@@ -11,6 +11,7 @@ import { PublicOnlyRoute } from "./PublicOnlyRoute";
 import EditProfilePage from "../features/profile/page/EditProfilePage";
 import WritePage from "../features/blog/page/WritePage";
 import BlogPage from "../features/blog/page/BlogPage";
+import SettingsPage from "../features/settings/page/Settings";
 
 const Router = createBrowserRouter([
   {
@@ -39,6 +40,7 @@ const Router = createBrowserRouter([
           { path: "write", element: <WritePage /> },
           { path: "write/:id", element: <WritePage /> },
           { path: "blog/:id", element: <BlogPage /> },
+          { path: "settings", element: <SettingsPage /> },
           // Twitter-style profile path: /<handle>
           { path: ":handle", element: <ProfilePage /> },
         ],
