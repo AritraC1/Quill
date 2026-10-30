@@ -117,7 +117,7 @@ class NotificationService {
         "fanout",
         { blogId, authorId },
         {
-          jobId: `fanout:${blogId}`,
+          jobId: `fanout-${blogId}`,
           removeOnComplete: { count: 500 },
           removeOnFail: { count: 500 },
         },

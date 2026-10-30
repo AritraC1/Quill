@@ -15,6 +15,7 @@ import { blogPublishQueue } from "../../jobs/queue";
 import {
   BadRequestError,
   ForbiddenError,
+  InternalServerError,
   NotFoundError,
 } from "../../core/errors";
 import { logger } from "../../core/logger/logger";
@@ -78,7 +79,7 @@ class BlogService {
 
   // Deterministic BullMQ job id per blog, so rescheduling replaces the
   // previous delayed job instead of stacking duplicates
-  private readonly scheduleJobId = (blogId: string) => `publish:${blogId}`;
+  private readonly scheduleJobId = (blogId: string) => `publish-${blogId}`;
 
   // Best-effort queue cleanup — deleting/cancelling never depends on Redis
   private async removePendingJob(blogId: string): Promise<void> {
@@ -214,9 +215,10 @@ class BlogService {
         },
       );
     } catch (error) {
+      logger.error({ error, blogId }, "Could not enqueue scheduled publish");
       // Never leave a scheduled row behind without a queued job
       await this.blogRepo.cancelSchedule(blogId);
-      throw new BadRequestError("Could not schedule the publish");
+      throw new InternalServerError("Could not schedule the publish");
     }
 
     return toBlogResponse(scheduled);
