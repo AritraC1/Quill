@@ -1,4 +1,4 @@
-# Quill
+# ✍🏻 Quill
 
 Quill is a writing and reading platform built as a Bun-workspace monorepo. The current app supports passwordless email sign-in, onboarding, profile management, publishing and scheduling markdown posts, server-backed feeds, follows, bookmarks, in-app notifications, saved reading preferences, and account deletion.
 
