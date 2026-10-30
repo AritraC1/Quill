@@ -15,8 +15,12 @@ export const errorHandler = (
     res.status(400).json({ success: false, message: "Malformed JSON body" });
     return;
   }
-  
-  if (err instanceof Error && "statusCode" in err && !Number.isNaN(err.statusCode)) {
+
+  if (
+    err instanceof Error &&
+    "statusCode" in err &&
+    !Number.isNaN(err.statusCode)
+  ) {
     const status = (err as Error & { statusCode: number }).statusCode;
     if (status === 413) {
       res
