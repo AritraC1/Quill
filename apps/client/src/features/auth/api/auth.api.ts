@@ -55,8 +55,7 @@ async function sendRequest<T>(
 
   if (!response.ok) {
     const message =
-      data?.message ||
-      `Request failed with status ${response.status}`;
+      data?.message || `Request failed with status ${response.status}`;
     throw new ApiError(message, response.status);
   }
 
@@ -65,10 +64,7 @@ async function sendRequest<T>(
 
 // Origin the API runs on — used to resolve asset paths like /uploads/… that
 // the server returns (relative to its own origin, which differs in dev)
-export const API_ORIGIN = new URL(
-  API_BASE_URL,
-  window.location.origin,
-).origin;
+export const API_ORIGIN = new URL(API_BASE_URL, window.location.origin).origin;
 
 /** Full URL for server-issued relative asset paths (avatars, images) */
 export function assetUrl(path?: string | null): string | undefined {

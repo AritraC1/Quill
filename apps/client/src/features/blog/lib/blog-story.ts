@@ -1,10 +1,6 @@
 import type { BlogResponseDTO } from "@quill/shared";
 import type { Story } from "../../profile/types/story.types";
-import {
-  markdownToPlainText,
-  readTimeMinutes,
-  wordCount,
-} from "./markdown";
+import { markdownToPlainText, readTimeMinutes, wordCount } from "./markdown";
 import { assetUrl } from "../../auth/api/auth.api";
 
 const MAX_EXCERPT = 180;
@@ -23,7 +19,8 @@ const formatDate = (iso: string): string =>
     day: "numeric",
   });
 
-const SERVER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SERVER_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Ids coming from the API are UUIDs; mock stories use plain numbers
 export const isServerBlogId = (id: string): boolean => SERVER_ID.test(id);

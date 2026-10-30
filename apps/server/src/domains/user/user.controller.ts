@@ -120,6 +120,47 @@ class UserController {
     }
   };
 
+  // Suggested users to follow — GET /user/suggestions
+  listSuggestions = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 20);
+      const result = await this.userService.listSuggestedUsers(
+        req.user?.userId,
+        limit,
+      );
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // One page of a writer's followers — GET /user/:handle/followers?page&limit
+  listFollowers = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const viewerId = req.user?.userId;
+      const page = Number(req.query.page) || 1;
+      const limit = Number(req.query.limit) || 10;
+      const result = await this.userService.listFollowers(
+        viewerId,
+        String(req.params.handle),
+        page,
+        limit,
+      );
+
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // Upload an avatar file — POST /user/avatar (multipart, field "avatar")
   uploadAvatar = async (
     req: Request,

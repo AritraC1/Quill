@@ -12,8 +12,14 @@ router.get("/me", requireAuth, userController.getMe);
 // My following list (before the /:handle catch-all)
 router.get("/following", requireAuth, userController.listFollowing);
 
+// Suggested users to follow (before the /:handle catch-all)
+router.get("/suggestions", requireAuth, userController.listSuggestions);
+
 // Public profile by handle (must come after the fixed prefixes above)
 router.get("/:handle", requireAuth, userController.getProfileByHandle);
+
+// One page of a writer's followers (profile followers modal)
+router.get("/:handle/followers", requireAuth, userController.listFollowers);
 
 // Upload avatar — multipart/form-data, field name "avatar".
 // Returns `{ url }`; the caller then PATCHes /edit-profile with `avatar: <url>`.

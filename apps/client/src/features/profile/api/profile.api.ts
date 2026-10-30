@@ -1,4 +1,5 @@
 import type {
+  FollowerListDTO,
   FollowResultDTO,
   PublicProfileDTO,
   UserProfileDTO,
@@ -11,6 +12,15 @@ type ServerFollowingUser = {
   name: string;
   handle: string | null;
   avatar: string | null;
+};
+
+type SuggestedUser = {
+  id: string;
+  name: string;
+  handle: string | null;
+  avatar: string | null;
+  bio: string | null;
+  followers: number;
 };
 
 // GET /user/me — served from a short-lived cache so several mounts
@@ -61,4 +71,29 @@ export async function setFollowApi(
 // People someone follows — real DB data (profile "Following" list)
 export async function listFollowingApi(): Promise<ServerFollowingUser[]> {
   return fetchWithAuth<ServerFollowingUser[]>(API_ROUTES.USER.FOLLOWING);
+}
+
+// The people a writer is followed by — GET /user/:handle/followers?page&limit
+// (one page at a time, so the modal can load more as the user scrolls)
+export async function listFollowersApi(
+  handle: string,
+  page = 1,
+  limit = 10,
+): Promise<FollowerListDTO> {
+  const url = new URL(
+    API_ROUTES.USER.FOLLOWERS(handle),
+    window.location.origin,
+  );
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("limit", String(limit));
+  return fetchWithAuth<FollowerListDTO>(url.pathname + url.search);
+}
+
+// Suggested users to follow — GET /user/suggestions
+export async function listSuggestionsApi(
+  limit = 5,
+): Promise<SuggestedUser[]> {
+  const url = new URL(API_ROUTES.USER.SUGGESTIONS, window.location.origin);
+  url.searchParams.set("limit", String(limit));
+  return fetchWithAuth<SuggestedUser[]>(url.pathname + url.search);
 }

@@ -43,7 +43,6 @@ function inline(text: string): string {
   return out;
 }
 
-
 // Canonical markdown -> sanitized HTML (for rich-text mode and the preview)
 export function markdownToHtml(md: string): string {
   if (!md.trim()) return "";
@@ -64,6 +63,7 @@ export function markdownToHtml(md: string): string {
       para = [];
     }
   };
+
   const flushQuote = () => {
     if (quote.length) {
       blocks.push(
@@ -74,6 +74,7 @@ export function markdownToHtml(md: string): string {
       quote = [];
     }
   };
+
   const flushList = () => {
     if (listItems.length) {
       const tag = listOrdered ? "ol" : "ul";
@@ -85,6 +86,7 @@ export function markdownToHtml(md: string): string {
       listItems = [];
     }
   };
+
   const flushAll = () => {
     flushPara();
     flushQuote();
@@ -110,35 +112,39 @@ export function markdownToHtml(md: string): string {
     const fence = line.match(/^```\s*([\w-]*)$/);
     const heading = line.match(/^(#{1,6})\s+(.*)$/);
     const rule = line.match(/^(-{3,}|\*{3,}|_{3,})$/);
-    const item = line.match(
-      /^(?:[-*+]|\d+[.)])\s+(.*)$/,
-    );
+    const item = line.match(/^(?:[-*+]|\d+[.)])\s+(.*)$/);
     const ordered = !!line.match(/^\d+[.)]\s+/);
 
     if (fence) {
       flushAll();
       lang = fence[1] || "text";
-    } else if (heading) {
+    } 
+    else if (heading) {
       flushAll();
       const hashes = heading[1] ?? "#";
       const level = Math.min(hashes.length, 6);
       blocks.push(
         `<h${level}>${inline(escapeHtml(heading[2] ?? ""))}</h${level}>`,
       );
-    } else if (rule) {
+    } 
+    else if (rule) {
       flushAll();
       blocks.push("<hr />");
-    } else if (line.startsWith(">")) {
+    } 
+    else if (line.startsWith(">")) {
       flushAll();
       quote.push(escapeHtml(line.slice(1).trimStart()));
-    } else if (item) {
+    } 
+    else if (item) {
       flushPara();
       flushQuote();
       listOrdered = ordered;
       listItems.push(escapeHtml(item[1] ?? ""));
-    } else if (!line.trim()) {
+    } 
+    else if (!line.trim()) {
       flushAll();
-    } else {
+    } 
+    else {
       flushQuote();
       flushList();
       para.push(line);
@@ -201,6 +207,7 @@ export function htmlToMarkdown(html: string): string {
       }
       case "blockquote": {
         const inner = htmlToMarkdown(el.innerHTML);
+        
         return inner
           .split("\n")
           .map((l) => (l ? `> ${l}` : ">"))
@@ -209,6 +216,7 @@ export function htmlToMarkdown(html: string): string {
       case "ul":
       case "ol": {
         const items = Array.from(el.querySelectorAll(":scope > li"));
+        
         return items
           .map((li, i) =>
             el.tagName.toLowerCase() === "ol"
@@ -219,11 +227,13 @@ export function htmlToMarkdown(html: string): string {
       }
       case "a": {
         const href = el.getAttribute("href") ?? "";
+        
         return children(el) ? `[${children(el)}](${href})` : "";
       }
       case "img": {
         const src = el.getAttribute("src") ?? "";
         const alt = el.getAttribute("alt") ?? "";
+        
         return `![${alt}](${src})`;
       }
       case "hr":

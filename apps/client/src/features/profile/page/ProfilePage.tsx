@@ -33,6 +33,7 @@ import type { Story } from "../types/story.types";
 import EmptyState from "../components/EmptyState";
 import ProfileMenu from "../components/ProfileMenu";
 import DraftRow from "../components/DraftRow";
+import FollowersModal from "../components/FollowersModal";
 import type { Tab } from "../types/tab.types";
 import { useOwnProfile } from "../hooks/useOwnProfile";
 
@@ -60,6 +61,7 @@ const ProfileView = () => {
 
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [followersOpen, setFollowersOpen] = useState(false);
 
   const tabs = isOwn ? OWN_TABS : VISITOR_TABS;
   const requested = searchParams.get("tab");
@@ -330,6 +332,9 @@ const ProfileView = () => {
       )
       .catch(() => {
         setVisitorProfile(previousProfile);
+        // Revert the optimistic local-storage update too — the server stays
+        // authoritative, but the cached set must not be left stale
+        following.set(profileHandle, !next);
         toast.error("Could not update follow");
       });
   };
@@ -427,8 +432,14 @@ const ProfileView = () => {
               <h2 className="font-editorial text-[24px] md:font-['Inter',sans-serif] md:text-[17px] md:font-semibold text-[#1B1F1C] truncate">
                 {author.name}
               </h2>
-              <p className="text-[13px] text-[#8A8F8B] mt-0.5">
-                {followerCount.toLocaleString()} Followers
+              <p className="mt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setFollowersOpen(true)}
+                  className="text-[13px] text-[#8A8F8B] underline-offset-2 hover:text-[#1B1F1C] hover:underline transition-colors"
+                >
+                  {followerCount.toLocaleString()} Followers
+                </button>
               </p>
               {isOwn && blogCount && (
                 <p className="text-[13px] text-[#8A8F8B] mt-0.5">
@@ -673,6 +684,15 @@ const ProfileView = () => {
             )}
         </div>
       </main>
+
+      {/* Followers modal — opens from the follower count under the name */}
+      <FollowersModal
+        open={followersOpen}
+        onClose={() => setFollowersOpen(false)}
+        name={author.name}
+        handle={profileHandle}
+        isOwn={isOwn}
+      />
     </AppShell>
   );
 };

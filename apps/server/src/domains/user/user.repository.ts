@@ -198,6 +198,48 @@ class UserRepository {
     return result.rows;
   }
 
+  // One page of the people following `userId`, newest follow first, plus a
+  // per-row "does the viewer already follow them back?" flag
+  async listFollowers(
+    userId: string,
+    viewerId: string,
+    page: number,
+    limit: number,
+  ): Promise<import("@quill/shared").FollowerListDTO> {
+    const offset = (page - 1) * limit;
+    const query = `
+      SELECT u.id, u.name, u.handle, u.avatar,
+             EXISTS (
+               SELECT 1 FROM user_follows fb
+               WHERE fb.follower_id = $2 AND fb.following_id = u.id
+             ) AS is_following,
+             COUNT(*) OVER() AS total_count
+      FROM user_follows f
+      JOIN users u ON u.id = f.follower_id
+      WHERE f.following_id = $1
+      ORDER BY f.created_at DESC
+      LIMIT $3 OFFSET $4;
+    `;
+    const result = await pool.query<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+      is_following: boolean;
+      total_count: string;
+    }>(query, [userId, viewerId, limit, offset]);
+    return {
+      items: result.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        handle: row.handle,
+        avatar: row.avatar,
+        isFollowing: row.is_following,
+      })),
+      total: Number(result.rows[0]?.total_count ?? 0),
+    };
+  }
+
   // Is `followerId` currently following `followingId`?
   async isFollowing(followerId: string, followingId: string): Promise<boolean> {
     const query = `
@@ -207,6 +249,45 @@ class UserRepository {
     `;
     const result = await pool.query(query, [followerId, followingId]);
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // Users to follow — everyone except current user and already followed
+  async listSuggestedUsers(
+    userId: string,
+    limit = 5,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+      bio: string | null;
+      followers: number;
+    }>
+  > {
+    const query = `
+      SELECT u.id, u.name, u.handle, u.avatar, u.bio,
+             (SELECT COUNT(*)::INT FROM user_follows WHERE following_id = u.id) AS followers
+      FROM users u
+      WHERE u.id <> $1
+        AND u.onboarding_completed = TRUE
+        AND u.handle IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM user_follows
+          WHERE follower_id = $1 AND following_id = u.id
+        )
+      ORDER BY followers DESC, u.created_at DESC
+      LIMIT $2;
+    `;
+    const result = await pool.query<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+      bio: string | null;
+      followers: number;
+    }>(query, [userId, limit]);
+    return result.rows;
   }
 
   // Delete a user

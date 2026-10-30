@@ -129,3 +129,13 @@ export async function listBookmarksApi(
     `${API_ROUTES.BLOG.BOOKMARKS}?page=${page}&limit=${limit}`,
   );
 }
+
+// Following feed — published blogs from followed users
+export async function listFollowingFeedApi(
+  page = 1,
+  limit = 20,
+): Promise<BlogListResult> {
+  return fetchWithAuth<BlogListResult>(
+    `${API_ROUTES.BLOG.FOLLOWING}?page=${page}&limit=${limit}`,
+  );
+}

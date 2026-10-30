@@ -314,6 +314,42 @@ class BlogRepository {
       total: Number(result.rows[0]?.total_count ?? 0),
     };
   }
+
+  // Get published blogs from users the viewer follows
+  async listFollowingFeed(
+    viewerId: string,
+    page: number,
+    limit: number,
+  ): Promise<BlogListResult> {
+    const offset = (page - 1) * limit;
+    const query = `
+            SELECT b.*, u.name AS author_name, u.handle AS author_handle,
+                   u.avatar AS author_avatar,
+                   EXISTS (
+                       SELECT 1 FROM blog_bookmarks bk
+                       WHERE bk.blog_id = b.id AND bk.user_id = $1
+                   ) AS bookmarked,
+                   COUNT(*) OVER() AS total_count
+            FROM blogs b
+            JOIN users u ON u.id = b.user_id
+            WHERE b.status = 'published'
+              AND b.user_id IN (
+                  SELECT following_id FROM user_follows WHERE follower_id = $1
+              )
+            ORDER BY b.published_at DESC
+            LIMIT $2 OFFSET $3;
+        `;
+
+    const result = await pool.query<BlogWithAuthorModel>(query, [
+      viewerId,
+      limit,
+      offset,
+    ]);
+    return {
+      items: result.rows,
+      total: Number(result.rows[0]?.total_count ?? 0),
+    };
+  }
 }
 
 export default BlogRepository;

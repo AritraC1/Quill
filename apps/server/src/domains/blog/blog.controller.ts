@@ -64,6 +64,29 @@ class BlogController {
     }
   };
 
+  // Following feed — GET /blogs/following?page&limit
+  listFollowingFeed = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      const query: BlogListQueryDTO = {
+        page: Number(req.query.page) || undefined,
+        limit: Number(req.query.limit) || undefined,
+      };
+      const result = await this.blogService.listFollowingFeed(userId, query);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // My published blogs — GET /blogs/published?page&limit
   listPublished = async (
     req: Request,

@@ -76,6 +76,22 @@ export interface FollowResultDTO {
   followers: number;
 }
 
+/** One follower in a page of GET /user/:handle/followers */
+export interface FollowerDTO {
+  id: string;
+  name: string;
+  handle: string | null;
+  avatar?: string | null;
+  /** Does the viewer already follow this person back? ("Follow back" button) */
+  isFollowing: boolean;
+}
+
+/** Page result of GET /user/:handle/followers?page&limit */
+export interface FollowerListDTO {
+  items: FollowerDTO[];
+  total: number;
+}
+
 // Onboarding a new user
 export interface OnboardRequestDTO {
   avatar?: string;

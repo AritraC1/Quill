@@ -38,7 +38,7 @@ export const createBlogSchema = z.object({
   title: z.string().max(200).optional(),
   content: z.string().max(500_000).optional(),
   description: z.string().max(500).optional(),
-  images: z.array(z.string().max(2048)).max(20).optional(),
+  // images: z.array(z.string().max(10_000)).max(20).optional(),
 });
 
 export const updateBlogSchema = createBlogSchema;

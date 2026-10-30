@@ -3,29 +3,22 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Sparkles, Users, Loader2 } from "lucide-react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { StoryCard } from "../../../components/ui/StoryCard";
-import { useStoredSet } from "../../../hooks/useStoredSet";
-import {
-  AUTHORS,
-  CURRENT_USER_HANDLE,
-  DEFAULT_FOLLOWING,
-} from "../../../data/mockProfiles";
-import { STORIES, DEFAULT_SAVED } from "../../../data/stories";
-import type { BlogResponseDTO } from "@quill/shared";
-import type { Story } from "../../profile/types/story.types";
+import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
+import Empty  from "../components/Empty";
+import FollowButton from "../components/FollowButton";
 import {
   listFeedApi,
+  listFollowingFeedApi,
   bookmarkBlogApi,
   deleteBlogApi,
 } from "../../blog/api/blog.api";
-import { setFollowApi } from "../../profile/api/profile.api";
+import { setFollowApi, listSuggestionsApi } from "../../profile/api/profile.api";
+import type { BlogResponseDTO } from "@quill/shared";
+import type { Story } from "../../profile/types/story.types";
 import { blogToStory, isServerBlogId } from "../../blog/lib/blog-story";
-import { useOwnProfile } from "../../profile/hooks/useOwnProfile";
-import Empty from "../components/Empty";
-import FollowButton from "../components/FollowButton";
 
 const PAGE_SIZE = 5;
-// Server-side feed page size — the feed previously fetched exactly one page
-// of 20 and never again, hard-capping every reader's feed
+// Server-side feed page size
 const FEED_PAGE_SIZE = 20;
 
 const TOPICS = [
@@ -59,17 +52,29 @@ const FeedPage = () => {
 
   const own = useOwnProfile();
 
-  const bookmarks = useStoredSet("quill_bookmarks", DEFAULT_SAVED);
-
-  const following = useStoredSet("quill_following", DEFAULT_FOLLOWING);
-
-  // Published blogs from the API, newest first (mock stories follow below)
+  // Server feed state for "For you" tab
   const [feedBlogs, setFeedBlogs] = useState<BlogResponseDTO[]>([]);
-  // Real pagination state: how deep into the server feed we are and how many
-  // published blogs exist in total (null = API unreachable → mock fallback)
   const [feedPage, setFeedPage] = useState(1);
   const [feedTotal, setFeedTotal] = useState<number | null>(null);
   const [serverDown, setServerDown] = useState(false);
+
+  // Following feed state for "Following" tab
+  const [followingBlogs, setFollowingBlogs] = useState<BlogResponseDTO[]>([]);
+  const [followingPage, setFollowingPage] = useState(1);
+  const [followingTotal, setFollowingTotal] = useState<number | null>(null);
+  const [followingServerDown, setFollowingServerDown] = useState(false);
+
+  // Suggestions state
+  const [suggestions, setSuggestions] = useState<
+    Array<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+      bio: string | null;
+      followers: number;
+    }>
+  >([]);
 
   const fetchFeedPage = useCallback(
     async (
@@ -79,13 +84,27 @@ const FeedPage = () => {
         const res = await listFeedApi(targetPage, FEED_PAGE_SIZE);
         return res;
       } catch {
-        // the feed still shows local stories when the API is unreachable
         return null;
       }
     },
     [],
   );
 
+  const fetchFollowingFeedPage = useCallback(
+    async (
+      targetPage: number,
+    ): Promise<{ items: BlogResponseDTO[]; total: number } | null> => {
+      try {
+        const res = await listFollowingFeedApi(targetPage, FEED_PAGE_SIZE);
+        return res;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  // Initial load for "For you" feed
   useEffect(() => {
     let cancelled = false;
     fetchFeedPage(1).then((res) => {
@@ -103,11 +122,42 @@ const FeedPage = () => {
     };
   }, [fetchFeedPage]);
 
-  // Append the next server page (driven by the infinite-scroll sentinel)
+  // Initial load for "Following" feed
+  useEffect(() => {
+    let cancelled = false;
+    fetchFollowingFeedPage(1).then((res) => {
+      if (cancelled) return;
+      if (res) {
+        setFollowingBlogs(res.items);
+        setFollowingTotal(res.total);
+        setFollowingServerDown(false);
+      } else {
+        setFollowingServerDown(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchFollowingFeedPage]);
+
+  // Load suggestions
+  useEffect(() => {
+    let cancelled = false;
+    listSuggestionsApi(5).then((res) => {
+      if (!cancelled) setSuggestions(res);
+    }).catch(() => {
+      // Silently fail - suggestions are optional
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Append the next server page for "For you"
   const loadMoreServer = useCallback(async () => {
     if (serverDown || feedTotal === null) return;
     const nextPage = feedPage + 1;
-    if (feedPage * FEED_PAGE_SIZE >= feedTotal) return; // exhausted
+    if (feedPage * FEED_PAGE_SIZE >= feedTotal) return;
 
     const res = await fetchFeedPage(nextPage);
     if (res) {
@@ -115,9 +165,25 @@ const FeedPage = () => {
       setFeedTotal(res.total);
       setFeedPage(nextPage);
     } else {
-      setServerDown(true); // midway outage — stop calling the server
+      setServerDown(true);
     }
   }, [feedPage, feedTotal, serverDown, fetchFeedPage]);
+
+  // Append the next server page for "Following"
+  const loadMoreFollowingServer = useCallback(async () => {
+    if (followingServerDown || followingTotal === null) return;
+    const nextPage = followingPage + 1;
+    if (followingPage * FEED_PAGE_SIZE >= followingTotal) return;
+
+    const res = await fetchFollowingFeedPage(nextPage);
+    if (res) {
+      setFollowingBlogs((prev) => [...prev, ...res.items]);
+      setFollowingTotal(res.total);
+      setFollowingPage(nextPage);
+    } else {
+      setFollowingServerDown(true);
+    }
+  }, [followingPage, followingTotal, followingServerDown, fetchFollowingFeedPage]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -143,34 +209,18 @@ const FeedPage = () => {
     [],
   );
 
-  const ownHandle = own.profile.handle ?? CURRENT_USER_HANDLE;
+  const ownHandle = own.profile.handle ?? "";
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
-    // Server feed first; mock stories only appear when the API never answered
-    let list: Story[] = [
-      ...feedBlogs.map((b) => blogToStory(b, ownHandle)),
-      ...(serverDown
-        ? STORIES.map((s) => ({
-            ...s,
-            isBookmarked: bookmarks.items.includes(s.id),
-            author:
-              s.author.handle === `@${CURRENT_USER_HANDLE}`
-                ? {
-                    ...s.author,
-                    name: own.profile.name,
-                    avatar: own.profile.avatarUrl ?? s.author.avatar,
-                  }
-                : s.author,
-          }))
-        : []),
-    ];
+    // Select the right feed based on tab
+    const currentFeedBlogs = tab === "following" ? followingBlogs : feedBlogs;
 
-    if (tab === "following")
-      list = list.filter((s) =>
-        following.items.includes(s.author.handle!.slice(1)),
-      );
+    // Server feed first; no mock fallback
+    let list: Story[] = currentFeedBlogs.map((b) =>
+      blogToStory(b, ownHandle),
+    );
 
     if (topic !== "All") list = list.filter((s) => s.topic === topic);
 
@@ -184,28 +234,23 @@ const FeedPage = () => {
     return list;
   }, [
     feedBlogs,
+    followingBlogs,
     ownHandle,
     tab,
     topic,
     searchQuery,
-    bookmarks.items,
-    following.items,
-    own.profile.name,
-    own.profile.avatarUrl,
-    serverDown,
   ]);
 
   const page = visible.slice(0, shown);
 
-  // More server pages exist, or (fallback mode) more local mock stories
-  const hasMore = feedTotal
-    ? feedPage * FEED_PAGE_SIZE < feedTotal
-    : serverDown
-      ? shown < visible.length
-      : false;
+  // More server pages exist
+  const currentTotal = tab === "following" ? followingTotal : feedTotal;
+  const hasMore = currentTotal
+    ? (tab === "following" ? followingPage : feedPage) * FEED_PAGE_SIZE <
+      currentTotal
+    : false;
 
-  // Infinite scroll — fetches the next server page (mock mode keeps the
-  // local slice behaviour so the UI degrades gracefully when the API is down)
+  // Infinite scroll
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasMore || isLoadingMore) return;
@@ -213,15 +258,19 @@ const FeedPage = () => {
       ([entry]) => {
         if (!entry?.isIntersecting) return;
         setIsLoadingMore(true);
-        if (serverDown || feedTotal === null) {
-          // API unreachable: local slicing keeps scroll working
-          loadTimer.current = setTimeout(() => {
-            setShown((n) => n + PAGE_SIZE);
-            setIsLoadingMore(false);
-          }, 500);
+        if (tab === "following") {
+          loadMoreFollowingServer().finally(() => {
+            loadTimer.current = setTimeout(
+              () => setIsLoadingMore(false),
+              500,
+            );
+          });
         } else {
           loadMoreServer().finally(() => {
-            loadTimer.current = setTimeout(() => setIsLoadingMore(false), 500);
+            loadTimer.current = setTimeout(
+              () => setIsLoadingMore(false),
+              500,
+            );
           });
         }
       },
@@ -229,7 +278,13 @@ const FeedPage = () => {
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [hasMore, isLoadingMore, loadMoreServer, serverDown, feedTotal]);
+  }, [
+    hasMore,
+    isLoadingMore,
+    loadMoreServer,
+    loadMoreFollowingServer,
+    tab,
+  ]);
 
   const changeTab = (t: Tab) => {
     setTab(t);
@@ -243,7 +298,6 @@ const FeedPage = () => {
 
   const changeSearch = (v: string) => {
     setSearchQuery(v);
-    // Keep `?q=` in the URL so a refresh or revisit re-applies the filter
     const next = new URLSearchParams(searchParams);
     if (v) next.set("q", v);
     else next.delete("q");
@@ -252,26 +306,38 @@ const FeedPage = () => {
   };
 
   const handleBookmark = (storyId: string, next: boolean) => {
-    // Server-backed blogs go through the API; mock stories stay local
     if (isServerBlogId(storyId)) {
-      setFeedBlogs((prev) =>
-        prev.map((b) => (b.id === storyId ? { ...b, isBookmarked: next } : b)),
-      );
+      // Update the correct feed
+      if (tab === "following") {
+        setFollowingBlogs((prev) =>
+          prev.map((b) => (b.id === storyId ? { ...b, isBookmarked: next } : b)),
+        );
+      } else {
+        setFeedBlogs((prev) =>
+          prev.map((b) => (b.id === storyId ? { ...b, isBookmarked: next } : b)),
+        );
+      }
       bookmarkBlogApi(storyId, next)
         .then(() =>
           showToast(next ? "Saved to reading list" : "Removed from saved"),
         )
         .catch(() => {
-          setFeedBlogs((prev) =>
-            prev.map((b) =>
-              b.id === storyId ? { ...b, isBookmarked: !next } : b,
-            ),
-          );
+          // Revert on failure
+          if (tab === "following") {
+            setFollowingBlogs((prev) =>
+              prev.map((b) =>
+                b.id === storyId ? { ...b, isBookmarked: !next } : b,
+              ),
+            );
+          } else {
+            setFeedBlogs((prev) =>
+              prev.map((b) =>
+                b.id === storyId ? { ...b, isBookmarked: !next } : b,
+              ),
+            );
+          }
           showToast("Could not update bookmark");
         });
-    } else {
-      bookmarks.set(storyId, next);
-      showToast(next ? "Saved to reading list" : "Removed from saved");
     }
   };
 
@@ -280,24 +346,24 @@ const FeedPage = () => {
 
   const handleDelete = (storyId: string) => {
     setFeedBlogs((prev) => prev.filter((b) => b.id !== storyId));
+    setFollowingBlogs((prev) => prev.filter((b) => b.id !== storyId));
     deleteBlogApi(storyId)
       .then(() => showToast("Story deleted"))
       .catch(() => showToast("Could not delete the story"));
   };
 
   const toggleFollow = async (handle: string) => {
-    const on = !following.has(handle);
-    // Optimistic local update so the Following tab reacts immediately
-    following.set(handle, on);
+    const on = !suggestions.some((s) => s.handle === handle);
     try {
       await setFollowApi(handle, on);
       showToast(
         on
-          ? `Following ${AUTHORS[handle]?.name ?? handle}`
-          : `Unfollowed ${AUTHORS[handle]?.name ?? handle}`,
+          ? `Following ${suggestions.find((s) => s.handle === handle)?.name ?? handle}`
+          : `Unfollowed ${suggestions.find((s) => s.handle === handle)?.name ?? handle}`,
       );
+      // Refresh suggestions after follow/unfollow
+      listSuggestionsApi(5).then(setSuggestions);
     } catch {
-      following.set(handle, !on); // revert on failure
       showToast("Could not update follow");
     }
   };
@@ -307,14 +373,9 @@ const FeedPage = () => {
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const firstName = own.profile.name.split(" ")[0] || "there";
 
-  const suggestions = Object.keys(AUTHORS)
-    .filter((h) => h !== CURRENT_USER_HANDLE && !following.has(h))
-    .slice(0, 3);
-  const picks = STORIES.filter((s) => s.isStaffPick).slice(0, 3);
-
   const emptyState = searchQuery.trim() ? (
     <Empty
-      title={`No stories match “${searchQuery.trim()}”`}
+      title={`No stories match "${searchQuery.trim()}"`}
       body="Try a different word, or browse a topic instead."
     />
   ) : tab === "following" ? (
@@ -400,7 +461,7 @@ const FeedPage = () => {
                 </div>
               ) : (
                 <p className="py-10 text-center text-[13px] text-[#8A8F8B]">
-                  You’re all caught up.{" "}
+                  You're all caught up.{" "}
                   <Link to="/write" className="text-[#1F3D2F] hover:underline">
                     Time to write something?
                   </Link>
@@ -414,7 +475,7 @@ const FeedPage = () => {
         <aside className="hidden md:flex md:col-span-4 flex-col gap-8 md:sticky md:top-24 md:self-start md:pl-4">
           <section className="rounded-xl border border-[#E6E2D8] p-4">
             <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3">
-              Today’s prompt
+              Today's prompt
             </h3>
             <p className="font-editorial text-[18px] leading-snug text-[#1B1F1C]">
               What is something you stopped noticing this year?
@@ -433,40 +494,36 @@ const FeedPage = () => {
             </h3>
             {suggestions.length === 0 ? (
               <p className="text-[13px] text-[#8A8F8B]">
-                You're following everyone here.
+                No suggestions available right now.
               </p>
             ) : (
               <ul className="space-y-3">
-                {suggestions.map((h) => {
-                  const a = AUTHORS[h];
-                  if (!a) return null;
-                  return (
-                    <li key={h} className="flex items-center gap-3">
-                      <Link
-                        to={`/${h}`}
-                        className="flex min-w-0 flex-1 items-center gap-3"
+                {suggestions.map((s) => (
+                  <li key={s.id} className="flex items-center gap-3">
+                    <Link
+                      to={`/${s.handle}`}
+                      className="flex min-w-0 flex-1 items-center gap-3"
+                    >
+                      <span
+                        className={`w-8 h-8 shrink-0 rounded-full bg-[#1F3D2F]/10 text-[#1F3D2F] font-editorial text-[13px] flex items-center justify-center`}
                       >
-                        <span
-                          className={`w-8 h-8 shrink-0 rounded-full ${a.color} text-white font-editorial text-[13px] flex items-center justify-center`}
-                        >
-                          {a.name[0]}
+                        {s.name[0]}
+                      </span>
+                      <span className="min-w-0 leading-tight">
+                        <span className="block text-[14px] font-medium text-[#1B1F1C] truncate">
+                          {s.name}
                         </span>
-                        <span className="min-w-0 leading-tight">
-                          <span className="block text-[14px] font-medium text-[#1B1F1C] truncate">
-                            {a.name}
-                          </span>
-                          <span className="block text-[12px] text-[#8A8F8B] truncate">
-                            {a.bio}
-                          </span>
+                        <span className="block text-[12px] text-[#8A8F8B] truncate">
+                          {s.bio ?? "Writer on Quill"}
                         </span>
-                      </Link>
-                      <FollowButton
-                        following={following.has(h)}
-                        onClick={() => void toggleFollow(h)}
-                      />
-                    </li>
-                  );
-                })}
+                      </span>
+                    </Link>
+                    <FollowButton
+                      following={false}
+                      onClick={() => void toggleFollow(s.handle ?? "")}
+                    />
+                  </li>
+                ))}
               </ul>
             )}
           </section>
@@ -490,27 +547,6 @@ const FeedPage = () => {
                 </button>
               ))}
             </div>
-          </section>
-
-          <section>
-            <h3 className="text-[13px] font-medium text-[#8A8F8B] mb-3">
-              Best picks
-            </h3>
-            <ul className="space-y-3">
-              {picks.map((s) => (
-                <li key={s.id}>
-                  <p className="font-editorial text-[15px] leading-snug text-[#1B1F1C]">
-                    {s.title}
-                  </p>
-                  <Link
-                    to={`/${s.author.handle!.slice(1)}`}
-                    className="text-[12px] text-[#8A8F8B] hover:text-[#1F3D2F]"
-                  >
-                    {s.author.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
           </section>
         </aside>
       </main>

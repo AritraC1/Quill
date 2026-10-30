@@ -6,7 +6,12 @@ import { AppShell } from "../../../components/layout/AppShell";
 import EmptyState from "../../profile/components/EmptyState";
 import { getBlogApi, bookmarkBlogApi } from "../api/blog.api";
 import type { BlogResponseDTO } from "@quill/shared";
-import { markdownToHtml, markdownToPlainText, wordCount, readTimeMinutes } from "../lib/markdown";
+import {
+  markdownToHtml,
+  markdownToPlainText,
+  wordCount,
+  readTimeMinutes,
+} from "../lib/markdown";
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", {
@@ -73,7 +78,7 @@ export const BlogPage = () => {
       <AppShell>
         <div className="mx-auto max-w-270 px-4 py-24 text-center">
           <EmptyState
-            title="We couldn’t find that story"
+            title="We couldn't find that story"
             body="It may have been deleted, or the link may be wrong."
             ctaLabel="Back to your feed"
             ctaTo="/feed"
@@ -136,7 +141,7 @@ export const BlogPage = () => {
                     {blog.author.name ?? "Unknown author"}
                   </Link>
                 ) : (
-                  blog.author?.name ?? "Unknown author"
+                  (blog.author?.name ?? "Unknown author")
                 )}
               </p>
               <p className="text-[12px] text-[#8A8F8B]">

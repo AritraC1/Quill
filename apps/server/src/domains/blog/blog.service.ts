@@ -282,6 +282,19 @@ class BlogService {
     };
   }
 
+  // Following feed: published blogs from users the viewer follows
+  async listFollowingFeed(
+    userId: string,
+    query: BlogListQueryDTO,
+  ): Promise<{ items: BlogResponseDTO[]; total: number }> {
+    const { page, limit } = parsePageLimit(query);
+    const result = await this.blogRepo.listFollowingFeed(userId, page, limit);
+    return {
+      items: result.items.map(toBlogResponse),
+      total: result.total,
+    };
+  }
+
   // The writer's published blogs (profile "Stories" tab)
   async listPublishedByUser(
     userId: string,

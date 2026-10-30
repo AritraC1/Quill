@@ -10,6 +10,7 @@ router.post("/", requireAuth, blogController.createBlog);
 
 // Read
 router.get("/", requireAuth, blogController.listFeed);
+router.get("/following", requireAuth, blogController.listFollowingFeed);
 router.get("/count", requireAuth, blogController.getBlogCount);
 router.get("/drafts", requireAuth, blogController.listDrafts);
 router.get("/published", requireAuth, blogController.listPublished);

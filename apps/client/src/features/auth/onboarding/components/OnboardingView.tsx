@@ -1,19 +1,59 @@
 import { useState, useRef, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Camera, Check, Sparkles, ArrowRight, Loader2, BookOpen, PenTool } from "lucide-react";
+import {
+  Camera,
+  Check,
+  Sparkles,
+  ArrowRight,
+  Loader2,
+  BookOpen,
+  PenTool,
+} from "lucide-react";
 import type { GenreOption } from "../types/onboarding.types";
 import { onboardApi, uploadAvatarApi } from "../../api/auth.api";
 
-
 const GENRES: GenreOption[] = [
-  { id: "essays", name: "Essays & Reflection", description: "Long-form personal narratives & thoughtful observations" },
-  { id: "technology", name: "Technology & Future", description: "Computing, engineering, open source & digital crafts" },
-  { id: "philosophy", name: "Philosophy & Mind", description: "Ethics, epistemology, mindfulness & human nature" },
-  { id: "culture", name: "Culture & Society", description: "Art, architecture, cities, media & social trends" },
-  { id: "literature", name: "Literature & Poetry", description: "Book reviews, prose analysis, poetry & craft of writing" },
-  { id: "science", name: "Science & Nature", description: "Biology, astronomy, ecology & scientific wonders" },
-  { id: "design", name: "Design & Craft", description: "Typography, product aesthetics, industrial design & minimalism" },
-  { id: "productivity", name: "Work & Focus", description: "Deep work, craftsmanship, thinking tools & creative habits" },
+  {
+    id: "essays",
+    name: "Essays & Reflection",
+    description: "Long-form personal narratives & thoughtful observations",
+  },
+  {
+    id: "technology",
+    name: "Technology & Future",
+    description: "Computing, engineering, open source & digital crafts",
+  },
+  {
+    id: "philosophy",
+    name: "Philosophy & Mind",
+    description: "Ethics, epistemology, mindfulness & human nature",
+  },
+  {
+    id: "culture",
+    name: "Culture & Society",
+    description: "Art, architecture, cities, media & social trends",
+  },
+  {
+    id: "literature",
+    name: "Literature & Poetry",
+    description: "Book reviews, prose analysis, poetry & craft of writing",
+  },
+  {
+    id: "science",
+    name: "Science & Nature",
+    description: "Biology, astronomy, ecology & scientific wonders",
+  },
+  {
+    id: "design",
+    name: "Design & Craft",
+    description:
+      "Typography, product aesthetics, industrial design & minimalism",
+  },
+  {
+    id: "productivity",
+    name: "Work & Focus",
+    description: "Deep work, craftsmanship, thinking tools & creative habits",
+  },
 ];
 
 export const OnboardingView = () => {
@@ -61,7 +101,9 @@ export const OnboardingView = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (selectedGenres.length === 0) {
-      setError("Please pick at least one favorite genre to customize your feed.");
+      setError(
+        "Please pick at least one favorite genre to customize your feed.",
+      );
       return;
     }
 
@@ -97,7 +139,10 @@ export const OnboardingView = () => {
         genres: selectedGenres,
         completedAt: new Date().toISOString(),
       };
-      localStorage.setItem("quill_onboarding_profile", JSON.stringify(onboardingData));
+      localStorage.setItem(
+        "quill_onboarding_profile",
+        JSON.stringify(onboardingData),
+      );
 
       // Simulate a brief pleasant transition
       await new Promise((res) => setTimeout(res, 500));
@@ -112,19 +157,25 @@ export const OnboardingView = () => {
   return (
     <div className="min-h-screen w-full bg-[#F7F3E9] text-[#232A3B] font-['Inter',ui-sans-serif,system-ui] py-12 px-4 sm:px-6 lg:px-8">
       {/* Paper texture overlay */}
-      <div className="pointer-events-none fixed inset-0 grain" aria-hidden="true" />
+      <div
+        className="pointer-events-none fixed inset-0 grain"
+        aria-hidden="true"
+      />
 
       <div className="relative mx-auto max-w-2xl">
         {/* Brand header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 mb-3">
-            <span className="font-editorial text-3xl font-semibold tracking-tight">✍🏻 Quill</span>
+            <span className="font-editorial text-3xl font-semibold tracking-tight">
+              ✍🏻 Quill
+            </span>
           </div>
           <h1 className="font-editorial text-3xl sm:text-4xl text-[#232A3B] tracking-tight">
             Craft your quiet space
           </h1>
           <p className="mt-2 text-sm sm:text-base text-[#232A3B]/70">
-            Tell us how you'd like to read and write. You can always refine this later.
+            Tell us how you'd like to read and write. You can always refine this
+            later.
           </p>
         </div>
 
@@ -171,9 +222,12 @@ export const OnboardingView = () => {
             </div>
 
             <div className="text-center sm:text-left flex-1">
-              <h3 className="font-medium text-[16px] text-[#232A3B]">Author Portrait</h3>
+              <h3 className="font-medium text-[16px] text-[#232A3B]">
+                Author Portrait
+              </h3>
               <p className="text-xs sm:text-sm text-[#232A3B]/60 mt-1">
-                Upload a photo or avatar that will appear beside your written pieces and notes.
+                Upload a photo or avatar that will appear beside your written
+                pieces and notes.
               </p>
               <button
                 type="button"
@@ -188,7 +242,10 @@ export const OnboardingView = () => {
           {/* Section 2: Short Bio */}
           <div className="flex flex-col gap-2 pb-6 border-b border-[#232A3B]/10">
             <div className="flex items-center justify-between">
-              <label htmlFor="bio" className="text-sm font-medium text-[#232A3B]">
+              <label
+                htmlFor="bio"
+                className="text-sm font-medium text-[#232A3B]"
+              >
                 Short Bio
               </label>
               <span className="text-xs text-[#232A3B]/50 font-mono">
@@ -247,7 +304,9 @@ export const OnboardingView = () => {
                           : "border-[#232A3B]/30 bg-white"
                       }`}
                     >
-                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                      {isSelected && (
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                      )}
                     </div>
                     <div>
                       <div className="text-sm font-medium text-[#232A3B]">

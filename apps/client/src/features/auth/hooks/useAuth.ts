@@ -8,10 +8,7 @@ import {
   signUpApi,
   verifyOtpApi,
 } from "../api/auth.api";
-import {
-  clearStoredUser,
-  saveStoredUser,
-} from "../../../lib/user-store";
+import { clearStoredUser, saveStoredUser } from "../../../lib/user-store";
 import { clearMeCache } from "../../profile/api/profile.api";
 
 function getErrorMessage(err: unknown, fallback: string): string {
@@ -25,7 +22,10 @@ interface AuthSession {
   onboardingCompleted: boolean | null;
 }
 
-const SIGNED_OUT: AuthSession = { authenticated: false, onboardingCompleted: null };
+const SIGNED_OUT: AuthSession = {
+  authenticated: false,
+  onboardingCompleted: null,
+};
 
 export function useAuth() {
   // Session state derived from the httpOnly auth cookies (via GET /auth/session).
@@ -136,7 +136,9 @@ export function useAuth() {
       clearStoredUser();
       clearMeCache();
     } catch (err: unknown) {
-      setError(err instanceof Error && err.message ? err.message : "Logout failed");
+      setError(
+        err instanceof Error && err.message ? err.message : "Logout failed",
+      );
       // Even on API failure the local identity should not survive
       clearStoredUser();
       clearMeCache();

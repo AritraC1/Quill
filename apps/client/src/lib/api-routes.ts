@@ -18,12 +18,15 @@ export const API_ROUTES = {
     EDIT_PROFILE: "/user/edit-profile",
     PROFILE: (handle: string) => `/user/${handle}`,
     FOLLOWING: "/user/following",
+    SUGGESTIONS: "/user/suggestions",
     FOLLOW: (handle: string) => `/user/${handle}/follow`,
+    FOLLOWERS: (handle: string) => `/user/${handle}/followers`,
     AVATAR: "/user/avatar",
   },
   // Blog Routes
   BLOG: {
     CREATE: "/blogs", // also the feed (list) endpoint
+    FOLLOWING: "/blogs/following",
     GET: (id: string) => `/blogs/${id}`,
     UPDATE: (id: string) => `/blogs/${id}`,
     DELETE: (id: string) => `/blogs/${id}`,

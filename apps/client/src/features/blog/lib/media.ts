@@ -44,15 +44,19 @@ const loadImage = (file: File) =>
  * your API call and return the hosted URL — nothing else has to change.
  */
 export const uploadImage = async (file: File): Promise<MediaAsset> => {
-  if (!file.type.startsWith("image/")) throw new Error(`${file.name} is not an image`);
-  if (file.size > MAX_BYTES) throw new Error(`${file.name} is larger than 10 MB`);
+  if (!file.type.startsWith("image/"))
+    throw new Error(`${file.name} is not an image`);
+
+  if (file.size > MAX_BYTES)
+    throw new Error(`${file.name} is larger than 10 MB`);
 
   let url: string;
   // GIFs are kept as-is so animation survives (SVG is rasterized below, since
   // only png/jpeg/gif/webp data URLs are allowed to render)
   if (file.type === "image/gif") {
     url = await readAsDataUrl(file);
-  } else {
+  } 
+  else {
     const img = await loadImage(file);
     const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height));
     const canvas = document.createElement("canvas");
@@ -74,7 +78,9 @@ export const uploadImages = async (files: File[]): Promise<MediaAsset[]> => {
     try {
       done.push(await uploadImage(file));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not add that image");
+      toast.error(
+        error instanceof Error ? error.message : "Could not add that image",
+      );
     }
   }
   return done;
@@ -87,7 +93,8 @@ export const uploadImages = async (files: File[]): Promise<MediaAsset[]> => {
 // and converts back to the full URL before anything is saved.
 // ---------------------------------------------------------------------------
 
-const DATA_IMAGE = /!\[([^\]]*)\]\((data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\)/g;
+const DATA_IMAGE =
+  /!\[([^\]]*)\]\((data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\)/g;
 const TOKEN_IMAGE = /!\[([^\]]*)\]\(img:([a-z0-9]+)\)/g;
 
 const idToUrl = new Map<string, string>();
@@ -95,7 +102,8 @@ const urlToId = new Map<string, string>();
 
 const hashUrl = (value: string): string => {
   let h = 5381;
-  for (let i = 0; i < value.length; i++) h = ((h << 5) + h + value.charCodeAt(i)) | 0;
+  for (let i = 0; i < value.length; i++)
+    h = ((h << 5) + h + value.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36) + value.length.toString(36);
 };
 
@@ -113,7 +121,10 @@ export const shortImageUrl = (url: string): string => {
 
 /** Full markdown -> what the textarea shows */
 export const collapseImages = (md: string): string =>
-  md.replace(DATA_IMAGE, (_m, alt: string, url: string) => `![${alt}](${shortImageUrl(url)})`);
+  md.replace(
+    DATA_IMAGE,
+    (_m, alt: string, url: string) => `![${alt}](${shortImageUrl(url)})`,
+  );
 
 /** What the textarea shows -> full markdown (unknown tokens are left as typed) */
 export const expandImages = (md: string): string =>

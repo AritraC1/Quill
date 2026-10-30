@@ -1,5 +1,6 @@
 import type {
   EditProfileDTO,
+  FollowerListDTO,
   FollowResultDTO,
   PublicProfileDTO,
   UserProfileDTO,
@@ -240,6 +241,42 @@ class UserService {
     }>
   > {
     return this.userRepo.listFollowingUsers(userId);
+  }
+
+  // One page of a writer's followers (profile followers modal)
+  async listFollowers(
+    viewerId: string,
+    handle: string,
+    page = 1,
+    limit = 10,
+  ): Promise<FollowerListDTO> {
+    const target = await this.userRepo.findByHandle(
+      handle.trim().toLowerCase(),
+    );
+    if (!target) {
+      throw new NotFoundError("User not found");
+    }
+
+    const safePage = Math.max(page, 1);
+    const safeLimit = Math.min(Math.max(limit, 1), 50);
+    return this.userRepo.listFollowers(target.id, viewerId, safePage, safeLimit);
+  }
+
+  // Users to follow — everyone except current user and already followed
+  async listSuggestedUsers(
+    userId: string,
+    limit = 5,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      handle: string | null;
+      avatar: string | null;
+      bio: string | null;
+      followers: number;
+    }>
+  > {
+    return this.userRepo.listSuggestedUsers(userId, limit);
   }
 }
 
