@@ -198,9 +198,13 @@ export const AppShell = ({
                     <span>Profile</span>
                   </Link>
 
-                  {/* <div className="flex items-center px-4 py-2 text-[14px] text-[#E6E2D8] hover:bg-white/10 hover:text-white transition-colors cursor-pointer">
-                    <span>Analytics</span>
-                  </div> */}
+                  <Link
+                    to="/my-clubs"
+                    onClick={() => setDropdownOpen(false)}
+                    className="flex items-center px-4 py-2 text-[14px] text-[#E6E2D8] hover:bg-white/10 hover:text-white transition-colors"
+                  >
+                    <span>My Clubs</span>
+                  </Link>
 
                   <Link
                     to="/settings"
