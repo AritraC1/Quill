@@ -1,8 +1,14 @@
+<div align="center">
+
+![alt text](apps/client/public/LandingPage.png)
+
 # ✍🏻 Quill
 
-Quill is a full-featured blog publishing and reading platform. The current app supports passwordless email sign-in, onboarding, profile management, publishing and scheduling markdown posts, follows, bookmarks, in-app notifications, saved reading preferences, and account deletion.
+Quill is a full-featured blogging platform for publishing, discovering, and saving stories, with passwordless sign-in, profiles, follows, notifications, and personalized reading preferences.
 
-> **Development and launch note:** OTP generation and verification currently use the fixed code `0000`. Do not deploy this authentication flow to production until that test behavior is removed. Compose is a self-hosting/development setup, not a production deployment configuration.
+</div>
+
+---
 
 ## Stack
 
@@ -112,3 +118,5 @@ bun run test:client
 `bun run dev` starts workspaces with a `dev` script (client and API); it does not start the worker.
 
 See the [documentation index](docs/README.md), [API reference](docs/API.md), [architecture](docs/Architecture.md), [system design](docs/System-Design.md), and [change log](CHANGE-LOG.md).
+
+---
