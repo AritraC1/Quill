@@ -43,6 +43,25 @@ quill/
 
 The client uses the server for these core features. Search and topic filtering are client-side over the currently loaded feed, and selected local-storage values still support UI state/cache behavior. See the [PRD](docs/PRD.md) and [API reference](docs/API.md) for precise behavior and limitations.
 
+## Future work
+
+Ideas for future product development; these are not currently implemented:
+
+1. Highlighting and annotations
+2. Newsletter, email subscribers, and RSS feeds
+3. A knowledge graph of articles and blogs
+4. Personal reading journal
+5. Reading library 
+6. read-later list (Queue with estimated reading time)
+7. Version history
+8. Live Blog Writing Competition (On-the-Spot Topic) 
+9. Content Moderation
+10. Add Prometheus and Grafana
+11. Full text search
+12. Series / Collection of Blogs (grouping)
+13. Upgrade rich text editor (TipTap / ProseMirror)
+14. Report and Block users
+
 ## Getting started
 
 Prerequisites: Bun 1.3+, Docker Compose (or local PostgreSQL and Redis), and a Resend API key. Server startup validates `DATABASE_URL`, `REDIS_URL`, a JWT secret of at least 32 characters, and `RESEND_API_KEY`.
