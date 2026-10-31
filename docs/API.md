@@ -437,6 +437,56 @@ invalid or stale `publishAt`, or oversized `title`/`content`/`description`;
 Bookmark state lives in `blog_bookmarks` (unique per `(user_id, blog_id)`), so
 saved lists survive across devices.
 
+### Comments (`/blogs/:blogId/comments`, `/comments`) — all authenticated
+
+The CommentSection under a published story. Threads are a two-level tree:
+`parent_comment_id` is `NULL` for a top-level comment and points at its parent
+for a reply; replying to a reply attaches under that reply's top-level
+ancestor (no third level is ever stored or served). Comments are soft-deleted
+(`deleted_at`): a removed comment keeps its place rendered as "Comment
+deleted" while its replies survive, and rows only disappear through the
+`ON DELETE CASCADE` when the blog or the account is deleted.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/blogs/:blogId/comments?page&limit` | Page of top-level comments (newest first), each with direct replies inline, `replyCount`, reaction totals and the viewer's reactions |
+| POST | `/blogs/:blogId/comments` | Add a comment; body `{ "body": "...", "parentCommentId": "uuid?" }` makes it a reply |
+| PATCH | `/comments/:commentId` | Edit own comment `{ "body": "..." }` |
+| DELETE | `/comments/:commentId` | Soft-delete own comment (owner only) |
+| PUT | `/comments/:commentId/reaction` | Apply the viewer's reaction `{ "reactionType": "like" \| "heart" }` |
+| DELETE | `/comments/:commentId/reaction` | Remove the viewer's reaction |
+
+Each comment is returned as a `CommentDTO`:
+
+```json
+{
+  "id": "…", "blogId": "…", "userId": "…",
+  "parentCommentId": null, "body": "Great read!",
+  "createdAt": "…", "updatedAt": "…", "deletedAt": null,
+  "author": { "id": "…", "name": "Alex", "handle": "alex", "avatar": null },
+  "replyCount": 2,
+  "reactions": { "like": 3, "heart": 1, "total": 4 },
+  "viewerReactions": ["like"],
+  "replies": [ { "id": "…", "parentCommentId": "…", "body": "Thanks!", "replyCount": 0, "replies": null } ]
+}
+```
+
+- **Pagination:** top-level comments page with `page`/`limit` (default 10, max 50).
+  Replies are embedded; a thread never paginates.
+- **Reactions:** one row per `(comment_id, user_id, reaction_type)` — a user may
+  apply "like" and "heart" together; repeating the same type is a no-op
+  (idempotent upsert), so double-clicks never double-count. Reaction totals are
+  `COUNT` groups per comment + type.
+- **Deletion behavior:** soft delete stamps `deleted_at`, the serialized `body`
+  becomes `""` and the client renders "Comment deleted"; deleted comments
+  cannot be reacted to or edited further.
+
+**Errors:** `401` unauthenticated; `404` unknown blog, or comments requested on
+someone else's draft; `400` body rules (`1–5,000 chars`), commenting on an
+unpublished blog, replying cross-blog or to a deleted comment, editing a
+deleted comment, reacting to a deleted comment; `403` editing/deleting another
+writer's comment.
+
 ## 5. Notifications (`/notifications`) — all authenticated
 
 In-app notifications for the navbar bell. There are exactly two events:
@@ -546,6 +596,8 @@ The email worker sends OTP email through Resend.
 | `user_follows` | `follower_id` ↔ `following_id` unique pair (no self-follow), `created_at` | `010_user_follows.sql` |
 | `notifications` | `recipient_id`, `actor_id`, `blog_id`, `type`, unique `event_key`, `read_at`; unread index | `011_create_notifications.sql` |
 | `user_settings` | Default feed tab, text size, theme, notification switches; genres remain in `users.fav_genre` | `012_user_settings.sql` |
+| `comments` | `blog_id` + `user_id` (cascade), self-referencing `parent_comment_id` (tree), `body`, soft-delete `deleted_at`; blog/parent/reader indexes | `013_create_comments.sql` |
+| `comment_reactions` | `comment_id` + `user_id` + `reaction_type` (`like`/`heart`) unique triple, `created_at`; per-comment count index | `013_create_comments.sql` |
 
 Migrations are plain, idempotent SQL files in `src/core/database/migrations/`,
 applied in filename order by the runner (`bun run migrate`,
@@ -591,6 +643,11 @@ applied in filename order by the runner (`bun run migrate`,
 | `clearNotificationsApi` | `DELETE /notifications` ("Clear" in the bell) |
 | `getSettingsApi` / `saveSettingsApi` | `GET` / `PUT /user/settings` |
 | `deleteAccountApi` | `DELETE /user/account` |
+| `listCommentsApi` | `GET /blogs/:blogId/comments?page&limit` (CommentSection) |
+| `createCommentApi` | `POST /blogs/:blogId/comments` (`parentCommentId` for replies) |
+| `updateCommentApi` | `PATCH /comments/:commentId` |
+| `deleteCommentApi` | `DELETE /comments/:commentId` (soft delete) |
+| `setCommentReactionApi` / `removeCommentReactionApi` | `PUT` / `DELETE /comments/:commentId/reaction` |
 
 The client write editor (`/write`, `/write/:id`) autosaves as a draft and
 publishes immediately or schedules through the API. Feed and profile pages

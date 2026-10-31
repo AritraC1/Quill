@@ -67,6 +67,20 @@ export const publishBlogSchema = z.object({
   publishAt: z.string().datetime().optional(),
 });
 
+export const createCommentSchema = z.object({
+  // A comment body: non-empty after trimming, capped ~ tweet-sized threads
+  body: z.string().trim().min(1).max(5_000),
+  parentCommentId: z.string().uuid().optional(),
+});
+
+export const updateCommentSchema = z.object({
+  body: z.string().trim().min(1).max(5_000),
+});
+
+export const commentReactionSchema = z.object({
+  reactionType: z.enum(["like", "heart"]),
+});
+
 type Schema = z.ZodType;
 
 /** Validate `payload` against `schema` or throw the standard 400 */

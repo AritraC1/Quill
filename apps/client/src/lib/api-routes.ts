@@ -40,6 +40,13 @@ export const API_ROUTES = {
     PUBLISHED: "/blogs/published",
     BOOKMARKS: "/blogs/bookmarks",
   },
+  // Comment Routes (CommentSection under a published story)
+  COMMENT: {
+    LIST: (blogId: string) => `/blogs/${blogId}/comments`,
+    UPDATE: (commentId: string) => `/comments/${commentId}`,
+    DELETE: (commentId: string) => `/comments/${commentId}`,
+    REACTION: (commentId: string) => `/comments/${commentId}/reaction`,
+  },
   // Notification Routes (bell in the navbar)
   NOTIFICATIONS: {
     LIST: "/notifications", // DELETE clears the whole list

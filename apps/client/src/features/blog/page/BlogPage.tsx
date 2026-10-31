@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AppShell } from "../../../components/layout/AppShell";
 import EmptyState from "../../profile/components/EmptyState";
 import { getBlogApi, bookmarkBlogApi } from "../api/blog.api";
+import CommentSection from "../components/CommentSection";
 import type { BlogResponseDTO } from "@quill/shared";
 import {
   markdownToHtml,
@@ -179,6 +180,9 @@ export const BlogPage = () => {
             dangerouslySetInnerHTML={{ __html: markdownToHtml(blog.content) }}
           />
         </article>
+
+        {/* Comments live under published stories only (drafts are private) */}
+        {blog.status === "published" && <CommentSection blogId={blog.id} />}
       </main>
     </AppShell>
   );

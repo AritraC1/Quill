@@ -266,6 +266,77 @@ export interface BlogListQueryDTO {
   author?: string;
 }
 
+// -------------- COMMENTS -------------- //
+
+/** Reaction types on a comment — "like" (clap) and "heart" (love) */
+export type CommentReactionType = "like" | "heart";
+
+/** Query for the comment page: GET /blogs/:blogId/comments?page&limit */
+export interface CommentListQueryDTO {
+  page?: number;
+  limit?: number;
+}
+
+/** Comment author — joined from users on every comment response */
+export interface CommentAuthorDTO {
+  id: string;
+  name: string;
+  handle?: string | null;
+  avatar?: string | null;
+}
+
+/** Reaction totals for one comment, per type + combined */
+export interface CommentReactionSummaryDTO {
+  like: number;
+  heart: number;
+  total: number;
+}
+
+/** Serialized comment as returned by every comment endpoint.
+ * Top-level comments in a list result carry their direct replies inline
+ * (two visible levels: replies never have children of their own). */
+export interface CommentDTO {
+  id: string;
+  blogId: string;
+  userId: string; // author id (ownership checks on the client)
+  parentCommentId: string | null; // null = top-level comment
+  /** Soft-deleted comments answer "" — the client shows "Comment deleted" */
+  body: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+  deletedAt: string | null; // null while the comment is alive
+  author: CommentAuthorDTO;
+  replyCount: number; // live (non-deleted) direct replies
+  reactions: CommentReactionSummaryDTO;
+  /** The viewer's reaction types on this comment, ["like"], ["heart"], or both */
+  viewerReactions: CommentReactionType[];
+  replies?: CommentDTO[]; // only present on top-level comments of a list
+}
+
+/** Body of POST /blogs/:blogId/comments (parentCommentId makes it a reply) */
+export interface CreateCommentDTO {
+  body: string;
+  parentCommentId?: string;
+}
+
+/** Body of PATCH /comments/:commentId */
+export interface UpdateCommentDTO {
+  body: string;
+}
+
+/** Page result of GET /blogs/:blogId/comments?page&limit */
+export interface CommentListDTO {
+  items: CommentDTO[];
+  total: number;
+}
+
+/** Result of PUT / DELETE /comments/:commentId/reaction */
+export interface CommentReactionResultDTO {
+  commentId: string;
+  /** The viewer's reaction types on the comment after the change */
+  viewerReactions: CommentReactionType[];
+}
+
 // -------------- NOTIFICATIONS -------------- //
 
 /**
