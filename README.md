@@ -1,6 +1,6 @@
 # ✍🏻 Quill
 
-Quill is a writing and reading platform built as a Bun-workspace monorepo. The current app supports passwordless email sign-in, onboarding, profile management, publishing and scheduling markdown posts, server-backed feeds, follows, bookmarks, in-app notifications, saved reading preferences, and account deletion.
+Quill is a full-featured blog publishing and reading platform. The current app supports passwordless email sign-in, onboarding, profile management, publishing and scheduling markdown posts, follows, bookmarks, in-app notifications, saved reading preferences, and account deletion.
 
 > **Development and launch note:** OTP generation and verification currently use the fixed code `0000`. Do not deploy this authentication flow to production until that test behavior is removed. Compose is a self-hosting/development setup, not a production deployment configuration.
 
