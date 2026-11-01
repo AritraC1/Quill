@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Check,
@@ -13,8 +13,34 @@ import {
 import { toast } from "sonner";
 import { AppShell } from "../../../components/layout/AppShell";
 import EmptyState from "../../profile/components/EmptyState";
+import { formatRelativeTime } from "../../../lib/datetime";
+import { getInitials } from "../../../lib/initials";
+import { assetUrl } from "../../auth/api/auth.api";
+import type {
+  ClubApplicationDTO,
+  ClubDTO,
+  ClubInvitationDTO,
+  ClubMemberDTO,
+  ClubSubmissionDTO,
+} from "@quill/shared";
+import {
+  acceptClubInvitationApi,
+  applyToClubApi,
+  createClubApi,
+  decideClubApplicationApi,
+  declineClubInvitationApi,
+  listClubApplicationsApi,
+  listClubInvitationsApi,
+  listClubMembersApi,
+  listClubSubmissionsApi,
+  listDiscoverClubsApi,
+  listMyClubsApi,
+  reviewClubSubmissionApi,
+  updateClubApi,
+  updateClubMemberRoleApi,
+} from "../api/club.api";
 
-/* ---------- types (move to @quill/shared once the API exists) ---------- */
+/* ---------- view types (mapped from the shared DTOs via the API) ---------- */
 type Role = "admin" | "moderator" | "member";
 type Privacy = "open" | "invite";
 
@@ -29,33 +55,73 @@ interface Club {
   pendingReviews: number;
   color: string;
 }
-interface Member { id: string; name: string; handle: string; role: Role }
 interface Submission { id: string; title: string; excerpt: string; author: string; words: number }
-interface JoinRequest { id: string; name: string; handle: string; note: string }
+interface JoinRequest {
+  id: string;
+  name: string;
+  handle: string | null;
+  avatar: string | null;
+  note: string;
+}
 
-/* ---------- mock data ---------- */
-const CLUBS: Club[] = [
-  { id: "c1", name: "Slow Mornings", description: "Essays on routines, rest and the small rituals that hold a day together.", privacy: "open", rules: ["Original work only", "No promotional links", "800+ words", "Be kind in feedback"], role: "admin", members: 128, pendingReviews: 4, color: "#1F3D2F" },
-  { id: "c2", name: "Field Notes", description: "Travel and nature writing from people who actually went there.", privacy: "invite", rules: ["First-person experience", "Photos must be yours"], role: "moderator", members: 46, pendingReviews: 2, color: "#B27D56" },
-  { id: "c3", name: "Plain Code", description: "Programming posts without the jargon.", privacy: "open", rules: ["Code must run", "Explain every acronym"], role: "member", members: 312, pendingReviews: 0, color: "#5C6B4F" },
-  { id: "c4", name: "Short Fiction Lab", description: "Weekly prompts, 1,500 words or fewer, honest critique.", privacy: "open", rules: ["Under 1,500 words", "Credit the prompt"], role: null, members: 89, pendingReviews: 0, color: "#7A4E3A" },
-  { id: "c5", name: "Quiet Money", description: "Personal finance written calmly, with receipts.", privacy: "invite", rules: ["Cite your numbers"], role: null, members: 54, pendingReviews: 0, color: "#3B5248" },
-];
-const MEMBERS: Member[] = [
-  { id: "m1", name: "You", handle: "you", role: "admin" },
-  { id: "m2", name: "Aarav Mehta", handle: "aarav", role: "moderator" },
-  { id: "m3", name: "Nisha Rao", handle: "nisha", role: "moderator" },
-  { id: "m4", name: "Kabir Singh", handle: "kabir", role: "member" },
-  { id: "m5", name: "Meera Iyer", handle: "meera", role: "member" },
-];
-const SUBMISSIONS: Submission[] = [
-  { id: "s1", title: "The case for doing nothing before 9am", excerpt: "I used to reach for my phone before my feet touched the floor. Here is what changed when I stopped…", author: "Kabir Singh", words: 1240 },
-  { id: "s2", title: "Ten tea rituals, ranked", excerpt: "Everyone has a kettle opinion. Mine started in a hostel kitchen in Pune…", author: "Meera Iyer", words: 620 },
-];
-const REQUESTS: JoinRequest[] = [
-  { id: "r1", name: "Dev Patel", handle: "devp", note: "I write about slow living and would love feedback from this group." },
-  { id: "r2", name: "Sana Khan", handle: "sanak", note: "Long-time reader, first time wanting to publish." },
-];
+const PersonAvatar = ({ name, avatar }: { name: string; avatar?: string | null }) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  const src = assetUrl(avatar);
+
+  if (src && !imageFailed) {
+    return (
+      <img
+        src={src}
+        alt={`${name}'s profile`}
+        onError={() => setImageFailed(true)}
+        className="h-9 w-9 shrink-0 rounded-full object-cover"
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-9 w-9 shrink-0 select-none items-center justify-center rounded-full bg-[#5C6B4F] font-editorial text-white">
+      {getInitials(name) || "?"}
+    </div>
+  );
+};
+
+// The schema has no brand color — derive a stable one per club id
+const CLUB_COLORS = ["#1F3D2F", "#B27D56", "#5C6B4F", "#7A4E3A", "#3B5248"];
+const clubColor = (id: string) =>
+  CLUB_COLORS[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % CLUB_COLORS.length];
+
+const fromClubDTO = (club: ClubDTO): Club => ({
+  id: club.id,
+  name: club.name,
+  description: club.description,
+  privacy: club.privacy,
+  rules: club.rules,
+  role: club.role,
+  members: club.memberCount,
+  pendingReviews: club.pendingReviews,
+  color: clubColor(club.id),
+});
+
+const toSubmission = (s: ClubSubmissionDTO): Submission => ({
+  id: s.id,
+  title: s.title,
+  excerpt: s.description,
+  author: s.author.name,
+  words: s.words,
+});
+
+const toRequest = (r: ClubApplicationDTO): JoinRequest => ({
+  id: r.id,
+  name: r.user.name,
+  handle: r.user.handle,
+  avatar: r.user.avatar,
+  note: r.note,
+});
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Something went wrong";
+}
 
 const ROLE_STYLE: Record<Role, string> = {
   admin: "bg-[#1F3D2F] text-white",
@@ -141,13 +207,18 @@ const Field = ({ label, hint, children }: { label: string; hint?: string; childr
 );
 
 /* ---------- create club ---------- */
-const CreateClubModal = ({ onClose, onCreate }: { onClose: () => void; onCreate: (c: Club) => void }) => {
+const CreateClubModal = ({ onClose, onCreate, onCreateError }: {
+  onClose: () => void;
+  onCreate: (c: ClubDTO) => void;
+  onCreateError: (message: string) => void;
+}) => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [privacy, setPrivacy] = useState<Privacy>("open");
   const [rules, setRules] = useState("");
   const [invites, setInvites] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const addInvite = () => {
     const h = draft.trim().replace(/^@/, "");
@@ -155,20 +226,26 @@ const CreateClubModal = ({ onClose, onCreate }: { onClose: () => void; onCreate:
     setDraft("");
   };
 
-  const submit = () => {
-    onCreate({
-      id: `c${Date.now()}`,
-      name: name.trim(),
-      description: description.trim(),
-      privacy,
-      rules: rules.split("\n").map((r) => r.trim()).filter(Boolean),
-      role: "admin",
-      members: 1,
-      pendingReviews: 0,
-      color: "#1F3D2F",
-    });
-    toast(invites.length ? `Club created · ${invites.length} invite(s) sent` : "Club created");
-    onClose();
+  const submit = async () => {
+    if (!name.trim() || !description.trim() || saving) return;
+    setSaving(true);
+    try {
+      const club = await createClubApi({
+        name: name.trim(),
+        description: description.trim(),
+        privacy,
+        rules: rules.split("\n").map((r) => r.trim()).filter(Boolean),
+        inviteHandles: invites,
+      });
+      onCreate(club);
+      toast(invites.length ? `Club created · ${invites.length} invite(s) sent` : "Club created");
+      onClose();
+    } catch (e) {
+      onCreateError(errorMessage(e));
+      toast.error(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -230,7 +307,7 @@ const CreateClubModal = ({ onClose, onCreate }: { onClose: () => void; onCreate:
 
       <div className="mt-7 flex justify-end gap-2">
         <button onClick={onClose} className={btnGhost}>Cancel</button>
-        <button onClick={submit} disabled={!name.trim() || !description.trim()} className={btnPrimary}>Create club</button>
+        <button onClick={() => { void submit(); }} disabled={!name.trim() || !description.trim() || saving} className={btnPrimary}>Create club</button>
       </div>
     </Modal>
   );
@@ -274,164 +351,28 @@ const ClubCard = ({ club, onOpen, onApply }: { club: Club; onOpen: () => void; o
 /* ---------- club detail ---------- */
 type DetailTab = "review" | "members" | "requests" | "rules";
 
-const ClubDetail = ({ club, onBack }: { club: Club; onBack: () => void }) => {
-  const canModerate = club.role === "admin" || club.role === "moderator";
-  const isAdmin = club.role === "admin";
-  const [tab, setTab] = useState<DetailTab>(canModerate ? "review" : "members");
-  const [subs, setSubs] = useState(SUBMISSIONS);
-  const [members, setMembers] = useState(MEMBERS);
-  const [requests, setRequests] = useState(REQUESTS);
-  const [rules, setRules] = useState(club.rules.join("\n"));
-
-  const tabs = [
-    ...(canModerate ? [{ id: "review" as const, label: "Review queue", count: subs.length }] : []),
-    { id: "members" as const, label: "Members" },
-    ...(canModerate ? [{ id: "requests" as const, label: "Join requests", count: requests.length }] : []),
-    { id: "rules" as const, label: "Rules" },
-  ];
-
-  const copyInvite = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/clubs/${club.id}/join`);
-      toast("Invite link copied");
-    } catch {
-      toast.error("Couldn't copy the link");
-    }
-  };
-
-  return (
-    <>
-      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-[#5C625E] hover:text-[#1F3D2F] transition-colors">
-        <ArrowLeft className="w-4 h-4" /> My clubs
-      </button>
-
-      <header className="mt-6 flex flex-wrap items-start gap-4">
-        <ClubMark club={club} size={56} />
-        <div className="min-w-0 flex-1">
-          <h1 className="font-editorial text-[32px] sm:text-[40px] leading-[1.15] tracking-tight text-[#1B1F1C]">{club.name}</h1>
-          <p className="mt-1.5 max-w-xl text-[15px] leading-6 text-[#5C625E]">{club.description}</p>
-          <div className="mt-3 flex items-center gap-3">
-            {club.role && <RoleBadge role={club.role} />}
-            <span className="text-[13px] text-[#8A8F8B]">{club.members} members</span>
-          </div>
-        </div>
-        {canModerate && (
-          <button onClick={copyInvite} className={btnGhost}><Link2 className="w-4 h-4" /> Copy invite link</button>
-        )}
-      </header>
-
-      <div className="mt-8"><Tabs value={tab} onChange={setTab} items={tabs} /></div>
-
-      <section className="mt-6">
-        {tab === "review" && (
-          subs.length === 0 ? (
-            <EmptyState title="Nothing to review" body="New submissions from members will show up here." ctaLabel="Back to clubs" ctaTo="/clubs" />
-          ) : (
-            <div className="space-y-4">
-              {subs.map((s) => (
-                <ReviewCard
-                  key={s.id}
-                  sub={s}
-                  rules={rules.split("\n").filter(Boolean)}
-                  onDecide={(d) => {
-                    setSubs(subs.filter((x) => x.id !== s.id));
-                    toast(d === "approve" ? "Approved and published to the club" : d === "changes" ? "Sent back with your notes" : "Rejected");
-                  }}
-                />
-              ))}
-            </div>
-          )
-        )}
-
-        {tab === "members" && (
-          <ul className="divide-y divide-[#E6E2D6] rounded-2xl border border-[#E6E2D6] bg-white">
-            {members.map((m) => (
-              <li key={m.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="w-9 h-9 rounded-full bg-[#B27D56] text-white font-editorial flex items-center justify-center select-none">{m.name[0]}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-medium text-[#1B1F1C] truncate">{m.name}</p>
-                  <p className="text-[12px] text-[#8A8F8B]">@{m.handle}</p>
-                </div>
-                {isAdmin && m.role !== "admin" ? (
-                  <select
-                    aria-label={`Role for ${m.name}`}
-                    value={m.role}
-                    onChange={(e) => {
-                      const role = e.target.value as Role;
-                      setMembers(members.map((x) => (x.id === m.id ? { ...x, role } : x)));
-                      toast(`${m.name} is now a ${ROLE_LABEL[role].toLowerCase()}`);
-                    }}
-                    className="rounded-full border border-[#D9D4C5] bg-white px-3 py-1.5 text-[13px] text-[#1B1F1C]"
-                  >
-                    <option value="member">Member</option>
-                    <option value="moderator">Moderator</option>
-                  </select>
-                ) : (
-                  <RoleBadge role={m.role} />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {tab === "requests" && (
-          requests.length === 0 ? (
-            <EmptyState title="No pending requests" body="People who apply to join will appear here." ctaLabel="Back to clubs" ctaTo="/clubs" />
-          ) : (
-            <ul className="space-y-3">
-              {requests.map((r) => (
-                <li key={r.id} className="rounded-2xl border border-[#E6E2D6] bg-white p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#5C6B4F] text-white font-editorial flex items-center justify-center select-none">{r.name[0]}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-medium text-[#1B1F1C]">{r.name}</p>
-                      <p className="text-[12px] text-[#8A8F8B]">@{r.handle}</p>
-                    </div>
-                    <button onClick={() => { setRequests(requests.filter((x) => x.id !== r.id)); toast("Request declined"); }} className={btnGhost}>Decline</button>
-                    <button onClick={() => { setRequests(requests.filter((x) => x.id !== r.id)); toast(`${r.name} joined the club`); }} className={btnPrimary}><Check className="w-3.5 h-3.5" /> Accept</button>
-                  </div>
-                  <p className="mt-3 text-[14px] leading-6 text-[#5C625E]">{r.note}</p>
-                </li>
-              ))}
-            </ul>
-          )
-        )}
-
-        {tab === "rules" && (
-          <div className="rounded-2xl border border-[#E6E2D6] bg-white p-5">
-            <p className="text-[14px] text-[#5C625E]">Moderators check every submission against these.</p>
-            {isAdmin ? (
-              <>
-                <textarea className={`${inputCls} mt-3`} rows={6} value={rules} onChange={(e) => setRules(e.target.value)} aria-label="Club rules, one per line" />
-                <div className="mt-3 flex justify-end"><button onClick={() => toast("Rules saved")} className={btnPrimary}>Save rules</button></div>
-              </>
-            ) : (
-              <ol className="mt-3 list-decimal space-y-2 pl-5 text-[15px] leading-6 text-[#1B1F1C]">
-                {rules.split("\n").filter(Boolean).map((r) => <li key={r}>{r}</li>)}
-              </ol>
-            )}
-          </div>
-        )}
-      </section>
-    </>
-  );
-};
-
 const ReviewCard = ({ sub, rules, onDecide }: {
   sub: Submission;
   rules: string[];
-  onDecide: (d: "approve" | "changes" | "reject") => void;
+  onDecide: (d: "approve" | "changes" | "reject", note: string) => Promise<void>;
 }) => {
   const [checked, setChecked] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
   const allPass = checked.length === rules.length;
+
+  const decide = (d: "approve" | "changes" | "reject") => {
+    if (busy) return;
+    setBusy(true);
+    onDecide(d, note).catch(() => setBusy(false));
+  };
 
   return (
     <article className="rounded-2xl border border-[#E6E2D6] bg-white p-5">
       <h3 className="font-editorial text-[22px] leading-snug text-[#1B1F1C]">{sub.title}</h3>
       <p className="mt-1 text-[12px] text-[#8A8F8B]">by {sub.author} · {sub.words.toLocaleString()} words</p>
       <p className="mt-3 text-[15px] leading-7 text-[#5C625E]">{sub.excerpt}</p>
-      <button className="mt-2 text-[13px] text-[#1F3D2F] hover:underline">Read the full blog</button>
+      <a href={`/blog/${sub.id}`} className="mt-2 inline-block text-[13px] text-[#1F3D2F] hover:underline">Read the full blog</a>
 
       <fieldset className="mt-5 rounded-xl bg-[#F6F3EA] p-4">
         <legend className="px-1 text-[13px] font-medium text-[#1B1F1C]">
@@ -460,11 +401,245 @@ const ReviewCard = ({ sub, rules, onDecide }: {
       />
 
       <div className="mt-4 flex flex-wrap justify-end gap-2">
-        <button onClick={() => onDecide("reject")} disabled={!note.trim()} className={btnGhost}>Reject</button>
-        <button onClick={() => onDecide("changes")} disabled={!note.trim()} className={btnGhost}>Request changes</button>
-        <button onClick={() => onDecide("approve")} disabled={!allPass} className={btnPrimary}>Approve</button>
+        <button onClick={() => decide("reject")} disabled={!note.trim() || busy} className={btnGhost}>Reject</button>
+        <button onClick={() => decide("changes")} disabled={!note.trim() || busy} className={btnGhost}>Request changes</button>
+        <button onClick={() => decide("approve")} disabled={!allPass || busy} className={btnPrimary}>Approve</button>
       </div>
     </article>
+  );
+};
+
+const ClubDetail = ({ club, onBack, onLeaveRuleSaved }: { club: Club; onBack: () => void; onLeaveRuleSaved?: () => void }) => {
+  const canModerate = club.role === "admin" || club.role === "moderator";
+  const isAdmin = club.role === "admin";
+  const [tab, setTab] = useState<DetailTab>(canModerate ? "review" : "members");
+  const [subs, setSubs] = useState<Submission[]>([]);
+  const [members, setMembers] = useState<ClubMemberDTO[]>([]);
+  const [requests, setRequests] = useState<JoinRequest[]>([]);
+  const [rules, setRules] = useState(club.rules.join("\n"));
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    const load = async () => {
+      try {
+        const membersResult = await listClubMembersApi(club.id);
+        if (!active) return;
+        setMembers(membersResult.items);
+        if (canModerate) {
+          const [subsResult, requestsResult] = await Promise.all([
+            listClubSubmissionsApi(club.id),
+            listClubApplicationsApi(club.id),
+          ]);
+          if (!active) return;
+          setSubs(subsResult.items.map(toSubmission));
+          setRequests(requestsResult.items.map(toRequest));
+        }
+      } catch (e) {
+        toast.error(errorMessage(e));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [club.id, canModerate]);
+
+  const reviewRules = rules.split("\n").filter(Boolean);
+
+  const decideSubmission = async (
+    sub: Submission,
+    decision: "approve" | "changes" | "reject",
+    note: string,
+  ) => {
+    try {
+      await reviewClubSubmissionApi(club.id, sub.id, {
+        decision:
+          decision === "approve"
+            ? "approved"
+            : decision === "changes"
+              ? "changes_requested"
+              : "rejected",
+        note: decision === "approve" ? note || undefined : note,
+      });
+      setSubs(subs.filter((x) => x.id !== sub.id));
+      toast(
+        decision === "approve"
+          ? "Approved and published to the club"
+          : decision === "changes"
+            ? "Sent back with your notes"
+            : "Rejected",
+      );
+    } catch (e) {
+      toast.error(errorMessage(e));
+      throw e;
+    }
+  };
+
+  const decideRequest = async (r: JoinRequest, decision: "approved" | "rejected") => {
+    try {
+      await decideClubApplicationApi(club.id, r.id, decision);
+      setRequests(requests.filter((x) => x.id !== r.id));
+      setMembers((m) => [...m, {
+        id: r.id, name: r.name, handle: r.handle, avatar: r.avatar,
+        role: "member", joinedAt: new Date().toISOString(),
+      }]);
+      toast(decision === "approved" ? `${r.name} joined the club` : "Request declined");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  const changeRole = async (m: ClubMemberDTO, role: Role) => {
+    try {
+      await updateClubMemberRoleApi(club.id, m.id, role);
+      setMembers(members.map((x) => (x.id === m.id ? { ...x, role } : x)));
+      toast(`${m.name} is now a ${ROLE_LABEL[role].toLowerCase()}`);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  const saveRules = async () => {
+    try {
+      const updated = await updateClubApi(club.id, {
+        rules: rules.split("\n").map((r) => r.trim()).filter(Boolean),
+      });
+      setRules(updated.rules.join("\n"));
+      onLeaveRuleSaved?.();
+      toast("Rules saved");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/clubs/${club.id}`);
+      toast("Invite link copied");
+    } catch {
+      toast.error("Couldn't copy the link");
+    }
+  };
+
+  const tabs = [
+    ...(canModerate ? [{ id: "review" as const, label: "Review queue", count: subs.length }] : []),
+    { id: "members" as const, label: "Members" },
+    ...(canModerate ? [{ id: "requests" as const, label: "Join requests", count: requests.length }] : []),
+    { id: "rules" as const, label: "Rules" },
+  ];
+
+  return (
+    <>
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] text-[#5C625E] hover:text-[#1F3D2F] transition-colors">
+        <ArrowLeft className="w-4 h-4" /> My clubs
+      </button>
+
+      <header className="mt-6 flex flex-wrap items-start gap-4">
+        <ClubMark club={club} size={56} />
+        <div className="min-w-0 flex-1">
+          <h1 className="font-editorial text-[32px] sm:text-[40px] leading-[1.15] tracking-tight text-[#1B1F1C]">{club.name}</h1>
+          <p className="mt-1.5 max-w-xl text-[15px] leading-6 text-[#5C625E]">{club.description}</p>
+          <div className="mt-3 flex items-center gap-3">
+            {club.role && <RoleBadge role={club.role} />}
+            <span className="text-[13px] text-[#8A8F8B]">{club.members} members</span>
+            {/* the club's public blog page */}
+            <a href={`/clubs/${club.id}`} className="text-[13px] text-[#1F3D2F] hover:underline">Blogs</a>
+          </div>
+        </div>
+        {canModerate && (
+          <button onClick={copyInvite} className={btnGhost}><Link2 className="w-4 h-4" /> Copy invite link</button>
+        )}
+      </header>
+
+      <div className="mt-8"><Tabs value={tab} onChange={setTab} items={tabs} /></div>
+
+      <section className="mt-6">
+        {tab === "review" && (
+          subs.length === 0 ? (
+            <EmptyState title={loading ? "Loading…" : "Nothing to review"} body="New submissions from members will show up here." ctaLabel="Back to clubs" ctaTo="/my-clubs" />
+          ) : (
+            <div className="space-y-4">
+              {subs.map((s) => (
+                <ReviewCard
+                  key={s.id}
+                  sub={s}
+                  rules={reviewRules}
+                  onDecide={(d, note) => decideSubmission(s, d, note)}
+                />
+              ))}
+            </div>
+          )
+        )}
+
+        {tab === "members" && (
+          <ul className="divide-y divide-[#E6E2D6] rounded-2xl border border-[#E6E2D6] bg-white">
+            {members.map((m) => (
+              <li key={m.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="w-9 h-9 rounded-full bg-[#B27D56] text-white font-editorial flex items-center justify-center select-none">{m.name[0]}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-medium text-[#1B1F1C] truncate">{m.name}</p>
+                  <p className="text-[12px] text-[#8A8F8B]">@{m.handle}</p>
+                </div>
+                {isAdmin && m.role !== "admin" ? (
+                  <select
+                    aria-label={`Role for ${m.name}`}
+                    value={m.role}
+                    onChange={(e) => changeRole(m, e.target.value as Role)}
+                    className="rounded-full border border-[#D9D4C5] bg-white px-3 py-1.5 text-[13px] text-[#1B1F1C]"
+                  >
+                    <option value="member">Member</option>
+                    <option value="moderator">Moderator</option>
+                  </select>
+                ) : (
+                  <RoleBadge role={m.role} />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {tab === "requests" && (
+          requests.length === 0 ? (
+            <EmptyState title={loading ? "Loading…" : "No pending requests"} body="People who apply to join will appear here." ctaLabel="Back to clubs" ctaTo="/my-clubs" />
+          ) : (
+            <ul className="space-y-3">
+              {requests.map((r) => (
+                <li key={r.id} className="rounded-2xl border border-[#E6E2D6] bg-white p-4">
+                  <div className="flex items-center gap-3">
+                    <PersonAvatar name={r.name} avatar={r.avatar} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-medium text-[#1B1F1C]">{r.name}</p>
+                      {r.handle && <p className="text-[12px] text-[#8A8F8B]">@{r.handle}</p>}
+                    </div>
+                    <button onClick={() => decideRequest(r, "rejected")} className={btnGhost}>Decline</button>
+                    <button onClick={() => decideRequest(r, "approved")} className={btnPrimary}><Check className="w-3.5 h-3.5" /> Accept</button>
+                  </div>
+                  <p className="mt-3 text-[14px] leading-6 text-[#5C625E]">{r.note}</p>
+                </li>
+              ))}
+            </ul>
+          )
+        )}
+
+        {tab === "rules" && (
+          <div className="rounded-2xl border border-[#E6E2D6] bg-white p-5">
+            <p className="text-[14px] text-[#5C625E]">Moderators check every submission against these.</p>
+            {isAdmin ? (
+              <>
+                <textarea className={`${inputCls} mt-3`} rows={6} value={rules} onChange={(e) => setRules(e.target.value)} aria-label="Club rules, one per line" />
+                <div className="mt-3 flex justify-end"><button onClick={() => { void saveRules(); }} className={btnPrimary}>Save rules</button></div>
+              </>
+            ) : (
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-[15px] leading-6 text-[#1B1F1C]">
+                {reviewRules.map((r) => <li key={r}>{r}</li>)}
+              </ol>
+            )}
+          </div>
+        )}
+      </section>
+    </>
   );
 };
 
@@ -472,20 +647,87 @@ const ReviewCard = ({ sub, rules, onDecide }: {
 type ListTab = "mine" | "discover" | "invites";
 
 export const MyClubsPage = () => {
-  const [clubs, setClubs] = useState(CLUBS);
+  const [mine, setMine] = useState<Club[]>([]);
+  const [discover, setDiscover] = useState<Club[]>([]);
+  const [invitations, setInvitations] = useState<ClubInvitationDTO[]>([]);
   const [tab, setTab] = useState<ListTab>("mine");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [applyTo, setApplyTo] = useState<Club | null>(null);
   const [applyNote, setApplyNote] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const mine = useMemo(() => clubs.filter((c) => c.role), [clubs]);
-  const discover = useMemo(
-    () => clubs.filter((c) => !c.role && c.privacy === "open" && c.name.toLowerCase().includes(query.toLowerCase())),
-    [clubs, query],
-  );
-  const openClub = clubs.find((c) => c.id === openId);
+  const loadMine = async () => {
+    try {
+      const result = await listMyClubsApi({ limit: 50 });
+      setMine(result.items.map(fromClubDTO));
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadInvitations = async () => {
+    try {
+      const result = await listClubInvitationsApi({ limit: 50 });
+      setInvitations(result.items);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  const loadDiscover = async (search: string) => {
+    try {
+      const result = await listDiscoverClubsApi({ limit: 50, search: search || undefined });
+      setDiscover(result.items.map(fromClubDTO));
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  useEffect(() => {
+    void loadMine();
+    void loadInvitations();
+  }, []);
+
+  // Discover reloads with the (debounced) search term
+  useEffect(() => {
+    const timer = setTimeout(() => { void loadDiscover(query); }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const openClub = mine.find((c) => c.id === openId);
+
+  const respondInvitation = async (invitationId: string, action: "accept" | "decline") => {
+    try {
+      if (action === "accept") {
+        await acceptClubInvitationApi(invitationId);
+        toast("Invitation accepted");
+      } else {
+        await declineClubInvitationApi(invitationId);
+        toast("Invitation declined");
+      }
+      setInvitations(invitations.filter((i) => i.id !== invitationId));
+      void loadMine();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  const sendApplication = async () => {
+    if (!applyTo) return;
+    try {
+      await applyToClubApi(applyTo.id, applyNote.trim());
+      toast(`Application sent to ${applyTo.name}`);
+      setApplyTo(null);
+      setApplyNote("");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
 
   return (
     <AppShell>
@@ -506,14 +748,14 @@ export const MyClubsPage = () => {
               <Tabs value={tab} onChange={setTab} items={[
                 { id: "mine", label: "Your clubs", count: 0 },
                 { id: "discover", label: "Discover" },
-                { id: "invites", label: "Invitations", count: 1 },
+                { id: "invites", label: "Invitations", count: invitations.length },
               ]} />
             </div>
 
             <section className="mt-6">
               {tab === "mine" && (
                 mine.length === 0 ? (
-                  <EmptyState title="You're not in any clubs yet" body="Start your own or apply to one from Discover." ctaLabel="Browse clubs" ctaTo="/clubs" />
+                  <EmptyState title={loading ? "Loading…" : "You're not in any clubs yet"} body="Start your own or apply to one from Discover." ctaLabel="Browse clubs" ctaTo="/my-clubs" />
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2">
                     {mine.map((c) => <ClubCard key={c.id} club={c} onOpen={() => setOpenId(c.id)} onApply={() => {}} />)}
@@ -535,24 +777,28 @@ export const MyClubsPage = () => {
               )}
 
               {tab === "invites" && (
-                <div className="flex items-center gap-4 rounded-2xl border border-[#E6E2D6] bg-white p-5">
-                  <ClubMark club={clubs[4]} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[15px] text-[#1B1F1C]"><span className="font-medium">Aarav Mehta</span> invited you to join <span className="font-medium">Quiet Money</span></p>
-                    <p className="text-[12px] text-[#8A8F8B]">2 days ago</p>
-                  </div>
-                  <button onClick={() => toast("Invitation declined")} className={btnGhost}>Decline</button>
-                  <button
-                    onClick={() => {
-                      setClubs(clubs.map((c) => (c.id === "c5" ? { ...c, role: "member" } : c)));
-                      toast("You joined Quiet Money");
-                      setTab("mine");
-                    }}
-                    className={btnPrimary}
-                  >
-                    Join
-                  </button>
-                </div>
+                invitations.length === 0 ? (
+                  <p className="mt-2 text-[14px] text-[#5C625E]">No pending invitations right now.</p>
+                ) : (
+                  <ul className="space-y-3">
+                    {invitations.map((inv) => (
+                      <li key={inv.id} className="flex items-center gap-4 rounded-2xl border border-[#E6E2D6] bg-white p-5">
+                        <div
+                          className="shrink-0 rounded-xl font-editorial text-white flex items-center justify-center select-none"
+                          style={{ background: clubColor(inv.club.id), width: 44, height: 44, fontSize: 20 }}
+                        >
+                          {inv.club.name[0]}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] text-[#1B1F1C]"><span className="font-medium">{inv.inviter.name}</span> invited you to join <span className="font-medium">{inv.club.name}</span></p>
+                          <p className="text-[12px] text-[#8A8F8B]">{formatRelativeTime(inv.createdAt)}</p>
+                        </div>
+                        <button onClick={() => respondInvitation(inv.id, "decline")} className={btnGhost}>Decline</button>
+                        <button onClick={() => respondInvitation(inv.id, "accept")} className={btnPrimary}>Join</button>
+                      </li>
+                    ))}
+                  </ul>
+                )
               )}
             </section>
           </>
@@ -562,7 +808,8 @@ export const MyClubsPage = () => {
       {creating && (
         <CreateClubModal
           onClose={() => setCreating(false)}
-          onCreate={(c) => { setClubs([c, ...clubs]); setTab("mine"); }}
+          onCreate={() => { void loadMine(); setTab("mine"); }}
+          onCreateError={() => undefined}
         />
       )}
 
@@ -582,7 +829,7 @@ export const MyClubsPage = () => {
             <button onClick={() => setApplyTo(null)} className={btnGhost}>Cancel</button>
             <button
               disabled={!applyNote.trim()}
-              onClick={() => { toast(`Application sent to ${applyTo.name}`); setApplyTo(null); setApplyNote(""); }}
+              onClick={() => { void sendApplication(); }}
               className={btnPrimary}
             >
               Send application

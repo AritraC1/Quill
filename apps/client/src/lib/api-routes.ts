@@ -54,4 +54,41 @@ export const API_ROUTES = {
     READ: (id: string) => `/notifications/${id}/read`,
     READ_ALL: "/notifications/read-all",
   },
+  // Club Routes (My Clubs)
+  CLUB: {
+    CREATE: "/clubs",
+    MINE: "/clubs/mine",
+    DISCOVER: "/clubs/discover",
+    INVITATIONS: "/clubs/invitations",
+    INVITATION_ACCEPT: (id: string) => `/clubs/invitations/${id}/accept`,
+    INVITATION_DECLINE: (id: string) => `/clubs/invitations/${id}/decline`,
+    GET: (id: string) => `/clubs/${id}`,
+    UPDATE: (id: string) => `/clubs/${id}`,
+    LANDING: (id: string) => `/clubs/${id}/landing`,
+    DASHBOARD: (id: string) => `/clubs/${id}/dashboard`,
+    MEMBERS: (id: string) => `/clubs/${id}/members`,
+    MEMBER: (id: string, userId: string) => `/clubs/${id}/members/${userId}`,
+    APPLICATIONS: (id: string) => `/clubs/${id}/applications`,
+    APPLICATION_DECISION: (id: string, applicationId: string) =>
+      `/clubs/${id}/applications/${applicationId}/decision`,
+    INVITE: (id: string) => `/clubs/${id}/invitations`,
+    SUBMISSIONS: (id: string) => `/clubs/${id}/submissions`,
+    SUBMISSION_REVIEW: (id: string, blogId: string) =>
+      `/clubs/${id}/submissions/${blogId}/review`,
+    SUBMISSION_REVIEWS: (id: string, blogId: string) =>
+      `/clubs/${id}/submissions/${blogId}/reviews`,
+    SUBMISSION_RESUBMIT: (id: string, blogId: string) =>
+      `/clubs/${id}/submissions/${blogId}/resubmit`,
+    CONVERSATIONS: (id: string) => `/clubs/${id}/conversations`,
+    DIRECT_CONVERSATION: (id: string) => `/clubs/${id}/conversations/direct`,
+    CONVERSATION: (id: string, conversationId: string) =>
+      `/clubs/${id}/conversations/${conversationId}`,
+    MESSAGES: (id: string, conversationId: string) =>
+      `/clubs/${id}/conversations/${conversationId}/messages`,
+    DRAFT_COLLABORATORS: (id: string, blogId: string) =>
+      `/clubs/${id}/drafts/${blogId}/collaborators`,
+    DRAFT_COLLABORATOR: (id: string, blogId: string, userId: string) =>
+      `/clubs/${id}/drafts/${blogId}/collaborators/${userId}`,
+    DRAFT_COLLAB_SAVE: (id: string, blogId: string) => `/clubs/${id}/drafts/${blogId}`,
+  },
 } as const;

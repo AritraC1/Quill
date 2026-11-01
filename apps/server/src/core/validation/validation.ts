@@ -81,6 +81,88 @@ export const commentReactionSchema = z.object({
   reactionType: z.enum(["like", "heart"]),
 });
 
+// -------------- CLUBS -------------- //
+
+const clubRuleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200); // one UI line per rule
+
+const createClubSchemaBase = z.object({
+  name: z.string().trim().min(2).max(60), // matches the DB CHECK 2–60
+  description: z.string().trim().min(1).max(1000),
+  privacy: z.enum(["open", "invite"]),
+  rules: z.array(clubRuleSchema).max(20).optional(),
+  inviteHandles: z.array(z.string().trim().min(1).max(30)).max(50).optional(),
+});
+
+export const createClubSchema = createClubSchemaBase;
+
+// PATCH /clubs/:id — admin partial update ("Save rules" sends only rules)
+export const updateClubSchema = createClubSchemaBase
+  .extend({
+    name: createClubSchemaBase.shape.name.optional(),
+    description: createClubSchemaBase.shape.description.optional(),
+  })
+  .partial()
+  .refine(
+    (data) =>
+      data.name !== undefined ||
+      data.description !== undefined ||
+      data.privacy !== undefined ||
+      data.rules !== undefined,
+    { message: "Nothing to update" },
+  );
+
+export const clubApplicationSchema = z.object({
+  note: z.string().trim().min(1).max(500), // matches the DB CHECK 1–500
+});
+
+export const clubApplicationDecisionSchema = z.object({
+  decision: z.enum(["approved", "rejected"]),
+});
+
+export const clubInvitationSchema = z.object({
+  handles: z.array(z.string().trim().min(1).max(30)).min(1).max(50),
+});
+
+export const clubRoleSchema = z.object({
+  role: z.enum(["admin", "moderator", "member"]),
+});
+
+export const createClubSubmissionSchema = z.object({
+  title: z.string().max(200).optional(),
+  content: z.string().max(500_000).optional(),
+  description: z.string().max(500).optional(),
+});
+
+export const clubReviewSchema = z.object({
+  decision: z.enum(["approved", "changes_requested", "rejected"]),
+  note: z.string().trim().max(1000).optional().nullable(),
+});
+
+export const clubMessageSchema = z.object({
+  body: z.string().trim().min(1).max(5_000), // matches the DB CHECK 1–5000
+});
+
+export const clubDirectConversationSchema = z.object({
+  handle: z.string().trim().min(1).max(30),
+});
+
+export const clubCollaboratorSchema = z.object({
+  handle: z.string().trim().min(1).max(30),
+});
+
+// PUT /clubs/:id/drafts/:blogId — collaborative save; version drives the
+// optimistic-concurrency check (stale versions answer 409)
+export const clubCollaborativeSaveSchema = z.object({
+  title: z.string().max(200).optional(),
+  content: z.string().max(500_000).optional(),
+  description: z.string().max(500).optional(),
+  version: z.number().int().min(1),
+});
+
 type Schema = z.ZodType;
 
 /** Validate `payload` against `schema` or throw the standard 400 */

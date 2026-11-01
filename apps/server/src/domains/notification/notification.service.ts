@@ -19,6 +19,12 @@ export const eventKeys = {
     `follow:${followerId}:${targetId}`,
   publish: (blogId: string, recipientId: string) =>
     `publish:${blogId}:${recipientId}`,
+  // The outstanding invitation to this club for that invitee — a new
+  // invitation attempt while one is pending dedupes to a no-op
+  clubInvite: (clubId: string, inviteeId: string) =>
+    `club-invite:${clubId}:${inviteeId}`,
+  // One per club_reviews row: every review cycle notifies afresh, retries no-op
+  clubReview: (reviewId: string) => `club-review:${reviewId}`,
 };
 
 class NotificationService {
@@ -42,6 +48,10 @@ class NotificationService {
       blog:
         row.blog_id && row.blog_title
           ? { id: row.blog_id, title: row.blog_title }
+          : null,
+      club:
+        row.club_id && row.club_name
+          ? { id: row.club_id, name: row.club_name }
           : null,
       createdAt: new Date(row.created_at).toISOString(),
       readAt: row.read_at ? new Date(row.read_at).toISOString() : null,
@@ -102,6 +112,49 @@ class NotificationService {
       });
     } catch (error) {
       logger.warn({ error, followerId, targetId }, "Follow notification failed");
+    }
+  }
+
+  // Fired ONLY after a club invitation was actually created. Best-effort.
+  async notifyClubInvitation(
+    inviteeId: string,
+    inviterId: string,
+    clubId: string,
+  ): Promise<void> {
+    try {
+      await this.notificationRepo.create({
+        recipientId: inviteeId,
+        actorId: inviterId,
+        clubId,
+        type: "club_invite",
+        eventKey: eventKeys.clubInvite(clubId, inviteeId),
+      });
+    } catch (error) {
+      logger.warn({ error, inviteeId, clubId }, "Club invite notification failed");
+    }
+  }
+
+  // Fired ONLY after a review row was written. The event key is the review's
+  // row id, so every review cycle (approve / request changes / reject)
+  // notifies the author once — worker retries no-op on the unique index.
+  async notifyClubReview(
+    authorId: string,
+    reviewerId: string | null,
+    reviewId: string,
+    blogId: string,
+    clubId: string,
+  ): Promise<void> {
+    try {
+      await this.notificationRepo.create({
+        recipientId: authorId,
+        actorId: reviewerId ?? authorId,
+        blogId,
+        clubId,
+        type: "club_review",
+        eventKey: eventKeys.clubReview(reviewId),
+      });
+    } catch (error) {
+      logger.warn({ error, reviewId, blogId }, "Club review notification failed");
     }
   }
 

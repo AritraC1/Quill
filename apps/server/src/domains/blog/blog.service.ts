@@ -20,14 +20,17 @@ import {
 } from "../../core/errors";
 import { logger } from "../../core/logger/logger";
 
-// Row -> serialized DTO (dates become ISO strings for the JSON response)
-function toBlogResponse(blog: BlogWithAuthorModel): BlogResponseDTO {
+// Row -> serialized DTO (dates become ISO strings for the JSON response).
+// Exported for the club service, which serializes club submissions' blogs too.
+export function toBlogResponse(blog: BlogWithAuthorModel): BlogResponseDTO {
   return {
     id: blog.id,
     userId: blog.user_id,
     title: blog.title,
     content: blog.content,
-    description: blog.description,
+    // pg stores the excerpt as blog_description; queries alias it to
+    // description but SELECT * rows keep the raw column
+    description: blog.description ?? blog.blog_description ?? "",
     images: blog.images ?? undefined,
     status: blog.status as BlogStatus,
     publishedAt: blog.published_at
@@ -47,6 +50,8 @@ function toBlogResponse(blog: BlogWithAuthorModel): BlogResponseDTO {
         }
       : undefined,
     isBookmarked: blog.bookmarked,
+    clubId: blog.club_id ?? undefined,
+    clubReviewStatus: blog.club_review_status ?? null,
   };
 }
 
@@ -159,6 +164,13 @@ class BlogService {
     }
     if (blog.status === "published") {
       throw new BadRequestError("Blog is already published");
+    }
+    // Club submissions must go through the club's review queue — a member
+    // cannot pull their own club draft public from the ordinary editor
+    if (blog.club_id && blog.club_review_status) {
+      throw new ForbiddenError(
+        "This draft is in club review — it is published through the club once approved",
+      );
     }
     if (!blog.title.trim()) {
       throw new BadRequestError("Add a title before publishing");

@@ -4,6 +4,7 @@ export interface NotificationRowModel {
   recipient_id: string;
   actor_id: string;
   blog_id: string | null;
+  club_id: string | null; // set for club_* notification types
   type: string;
   event_key: string;
   created_at: Date;
@@ -14,4 +15,6 @@ export interface NotificationRowModel {
   actor_avatar?: string | null;
   // joined from blogs
   blog_title?: string | null;
+  // joined from clubs
+  club_name?: string | null;
 }

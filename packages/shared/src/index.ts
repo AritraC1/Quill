@@ -237,6 +237,8 @@ export interface BlogResponseDTO {
   updatedAt: string;
   author?: BlogAuthorDTO; // present on list/detail responses
   isBookmarked?: boolean; // last saved/unsaved state for the viewer
+  clubId?: string | null; // set when the blog is attributed to a club
+  clubReviewStatus?: "pending" | "changes_requested" | "rejected" | null; // live review state of a club submission
 }
 
 /** Writer statistics — GET /blogs/count */
@@ -337,14 +339,297 @@ export interface CommentReactionResultDTO {
   viewerReactions: CommentReactionType[];
 }
 
+// -------------- CLUBS -------------- //
+
+// "My Clubs" writing collectives. Open clubs appear in Discover and accept
+// applications; invite-only clubs are hidden from Discover and use
+// invitations. Blogs published through a club keep their real author
+// (user_id) internally while being attributed to the club (blog.club_id).
+
+export type ClubPrivacy = "open" | "invite";
+/** The UI's reviewer role is "moderator" */
+export type ClubRole = "admin" | "moderator" | "member";
+export type ClubApplicationStatus = "pending" | "approved" | "rejected";
+export type ClubInvitationStatus = "pending" | "accepted" | "declined";
+/** Decision of an admin/moderator on a club submission */
+export type ClubReviewDecision = "approved" | "changes_requested" | "rejected";
+export type ClubActivityType =
+  | "member_joined"
+  | "submission"
+  | "review_decision"
+  | "post_published"
+  | "role_changed"
+  | "application";
+
+/** A lightweight person shape used across club payloads (members, authors,
+ * reviewers, chat senders, activity actors) */
+export interface ClubUserDTO {
+  id: string;
+  name: string;
+  handle: string | null;
+  avatar: string | null;
+}
+
+/** Serialized club as returned by Mine / Discover / invitations / detail */
+export interface ClubDTO {
+  id: string;
+  name: string;
+  description: string;
+  privacy: ClubPrivacy;
+  rules: string[];
+  /** The viewer's role; null = not a member (Discover cards) */
+  role: ClubRole | null;
+  memberCount: number;
+  /** Submissions waiting for review — surfaced to admins/moderators only */
+  pendingReviews: number;
+  createdAt: string;
+}
+
+export interface ClubListDTO {
+  items: ClubDTO[];
+  total: number;
+}
+
+/** POST /clubs — the creator becomes the admin */
+export interface CreateClubDTO {
+  name: string;
+  description: string;
+  privacy: ClubPrivacy;
+  rules?: string[]; // one rule per line in the UI
+  inviteHandles?: string[]; // optional @handles invited right away
+}
+
+export interface UpdateClubDTO {
+  name?: string;
+  description?: string;
+  privacy?: ClubPrivacy;
+  rules?: string[];
+}
+
+/** A club member with their profile */
+export interface ClubMemberDTO extends ClubUserDTO {
+  role: ClubRole;
+  joinedAt: string;
+}
+
+export interface ClubMemberListDTO {
+  items: ClubMemberDTO[];
+  total: number;
+}
+
+/** A join application (open clubs) with its mandatory note */
+export interface ClubApplicationDTO {
+  id: string;
+  clubId: string;
+  user: ClubUserDTO;
+  note: string;
+  createdAt: string;
+}
+
+export interface ClubApplicationListDTO {
+  items: ClubApplicationDTO[];
+  total: number;
+}
+
+/** POST /clubs/:id/applications */
+export interface CreateClubApplicationDTO {
+  note: string;
+}
+
+/** POST /clubs/:id/applications/:applicationId/decision (admin/moderator) */
+export interface ClubApplicationDecisionDTO {
+  decision: "approved" | "rejected";
+}
+
+/** An invitation, in the invitee's view */
+export interface ClubInvitationDTO {
+  id: string;
+  club: { id: string; name: string; privacy: ClubPrivacy };
+  inviter: ClubUserDTO;
+  createdAt: string;
+}
+
+export interface ClubInvitationListDTO {
+  items: ClubInvitationDTO[];
+  total: number;
+}
+
+/** POST /clubs/:id/invitations — invite users by handle */
+export interface CreateClubInvitationDTO {
+  handles: string[];
+}
+
+/** How many invitations actually went out (unknown handles skipped) */
+export interface ClubInvitationResultDTO {
+  invited: number;
+}
+
+/** Result of POST /clubs/invitations/:invitationId/accept|decline */
+export interface ClubInvitationResponseDTO {
+  id: string;
+  clubId: string;
+  status: ClubInvitationStatus;
+}
+
+/** A blog waiting in the club's review queue */
+export interface ClubSubmissionDTO {
+  id: string; // blog id
+  title: string;
+  description: string;
+  author: ClubUserDTO;
+  words: number;
+  submittedAt: string; // ISO
+}
+
+export interface ClubSubmissionListDTO {
+  items: ClubSubmissionDTO[];
+  total: number;
+}
+
+/** POST /clubs/:id/submissions — submit a draft into the club's review queue */
+export interface CreateClubSubmissionDTO {
+  title?: string;
+  content?: string;
+  description?: string;
+}
+
+/** Result of POST /clubs/:id/submissions/:blogId (re-submit a handled draft) */
+export interface ClubSubmissionResultDTO {
+  blogId: string;
+  clubReviewStatus: "pending";
+}
+
+/** One recorded review decision (history is never deleted) */
+export interface ClubReviewDTO {
+  id: string;
+  blogId: string;
+  clubId: string;
+  decision: ClubReviewDecision;
+  note: string | null;
+  reviewer: ClubUserDTO | null;
+  createdAt: string;
+}
+
+export interface ClubReviewListDTO {
+  items: ClubReviewDTO[];
+  total: number;
+}
+
+/** POST /clubs/:id/submissions/:blogId/review (admin/moderator) */
+export interface CreateClubReviewDTO {
+  decision: ClubReviewDecision;
+  /** Required to request changes or reject; optional on approve */
+  note?: string | null;
+}
+
+/** One chat message (group or 1:1 club conversation) */
+export interface ClubMessageDTO {
+  id: string;
+  conversationId: string;
+  sender: ClubUserDTO;
+  body: string;
+  createdAt: string;
+}
+
+export interface ClubMessageListDTO {
+  items: ClubMessageDTO[];
+  total: number;
+}
+
+/** POST body of POST /clubs/:id/conversations/:conversationId/messages */
+export interface CreateClubMessageDTO {
+  body: string;
+}
+
+export interface ClubConversationDTO {
+  id: string;
+  clubId: string;
+  isGroup: boolean;
+  updatedAt: string;
+  participants: ClubUserDTO[];
+}
+
+export interface ClubConversationListDTO {
+  items: ClubConversationDTO[];
+}
+
+/** POST /clubs/:id/conversations/direct — 1:1 with a fellow member (@handle) */
+export interface CreateClubDirectConversationDTO {
+  handle: string;
+}
+
+/** One dashboard activity entry */
+export interface ClubActivityDTO {
+  id: string;
+  type: ClubActivityType;
+  detail: string;
+  actor: ClubUserDTO | null;
+  createdAt: string;
+}
+
+/** GET /clubs/:id/dashboard — persisted metrics, admins only */
+export interface ClubDashboardDTO {
+  totalMembers: number;
+  publishedPosts: number;
+  pendingReviews: number;
+  recentActivity: ClubActivityDTO[];
+}
+
+/** GET /clubs/:id/landing — the club's public blog page (subject to privacy) */
+export interface ClubLandingDTO {
+  club: ClubDTO;
+  posts: BlogResponseDTO[];
+  total: number;
+}
+
+/** A collaborator on a club blog draft */
+export interface ClubCollaboratorDTO extends ClubUserDTO {
+  addedAt: string;
+}
+
+export interface ClubCollaboratorListDTO {
+  items: ClubCollaboratorDTO[];
+  total: number;
+}
+
+/** POST /clubs/:id/drafts/:blogId/collaborators — the author adds members */
+export interface CreateClubCollaboratorDTO {
+  handle: string;
+}
+
+/** PUT /clubs/:id/drafts/:blogId — collaborative draft save with optimistic
+ * concurrency: the edit carries the version it started from */
+export interface ClubCollaborativeSaveDTO {
+  title?: string;
+  content?: string;
+  description?: string;
+  images?: string[];
+  /** blogs.version at the time the edit started — a stale version is 409 */
+  version: number;
+}
+
+export interface ClubCollaborativeSaveResultDTO {
+  blog: BlogResponseDTO;
+  version: number;
+}
+
 // -------------- NOTIFICATIONS -------------- //
 
 /**
- * The only notification events in Quill:
+ * Quill notification events:
  *  - "new_follower": someone follows a writer (recipient = the writer)
  *  - "new_post":     a followed writer publishes a blog (recipient = follower)
+ *  - "club_invite":  a club member invites a writer (recipient = the invitee)
+ *  - "club_review":  a reviewer decides on the author's club submission
+ *                    (recipient = the author)
+ * "club_application" exists in the DB too; the server does not create it yet.
  */
-export type NotificationType = "new_follower" | "new_post";
+export type NotificationType =
+  | "new_follower"
+  | "new_post"
+  | "club_invite"
+  | "club_application"
+  | "club_review";
 
 /** Who caused the event — the name shown in the rendered message */
 export interface NotificationActorDTO {
@@ -360,12 +645,19 @@ export interface NotificationBlogDTO {
   title: string;
 }
 
+/** The club behind club_* notifications (null for everything else) */
+export interface NotificationClubDTO {
+  id: string;
+  name: string;
+}
+
 /** One entry in the bell dropdown */
 export interface NotificationDTO {
   id: string;
   type: NotificationType;
   actor: NotificationActorDTO;
-  blog: NotificationBlogDTO | null; // null for follow notifications
+  blog: NotificationBlogDTO | null; // null for follow/club notifications
+  club: NotificationClubDTO | null; // null for follow/post notifications
   createdAt: string; // ISO
   readAt: string | null; // null while unread (the badge counts these)
 }

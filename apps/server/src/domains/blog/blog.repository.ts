@@ -34,16 +34,16 @@ class BlogRepository {
     viewerId: string,
   ): Promise<BlogWithAuthorModel | null> {
     const query = `
-            SELECT b.*, u.name AS author_name, u.handle AS author_handle,
+            SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
                    u.avatar AS author_avatar,
                    EXISTS (
-                       SELECT 1 FROM blog_bookmarks bk
-                       WHERE bk.blog_id = b.id AND bk.user_id = $2
-                   ) AS bookmarked
-            FROM blogs b
-            JOIN users u ON u.id = b.user_id
-            WHERE b.id = $1
-            LIMIT 1;
+                        SELECT 1 FROM blog_bookmarks bk
+                        WHERE bk.blog_id = b.id AND bk.user_id = $2
+                    ) AS bookmarked
+             FROM blogs b
+             JOIN users u ON u.id = b.user_id
+             WHERE b.id = $1
+             LIMIT 1;
         `;
 
     const result = await pool.query<BlogWithAuthorModel>(query, [id, viewerId]);
@@ -55,7 +55,7 @@ class BlogRepository {
     const query = `
             INSERT INTO blogs (user_id, title, content, blog_description, images, status)
             VALUES ($1, $2, $3, $4, $5, 'draft')
-            RETURNING *;
+            RETURNING *, blog_description AS description;
         `;
 
     const result = await pool.query<BlogModel>(query, [
@@ -66,6 +66,114 @@ class BlogRepository {
       data.images ?? null,
     ]);
     return result.rows[0]!;
+  }
+
+  // Create a club member's submission — a draft attributed to the club that
+  // immediately enters the club's review queue (club_review_status = 'pending')
+  async createBlogInClub(
+    userId: string,
+    clubId: string,
+    data: CreateBlogDTO,
+  ): Promise<BlogModel> {
+    const query = `
+            INSERT INTO blogs (user_id, club_id, club_review_status, title, content, blog_description, images, status)
+            VALUES ($1, $2, 'pending', $3, $4, $5, $6, 'draft')
+            RETURNING *, blog_description AS description;
+        `;
+
+    const result = await pool.query<BlogModel>(query, [
+      userId,
+      clubId,
+      data.title ?? "",
+      data.content ?? "",
+      data.description ?? "",
+      data.images ?? null,
+    ]);
+    return result.rows[0]!;
+  }
+
+  // Move a club submission through its review state (pending guard exists in
+  // the service). Approvals clear the state in approveClubBlog instead.
+  async setClubReviewStatus(
+    blogId: string,
+    status: "changes_requested" | "rejected" | "pending" | null,
+  ): Promise<BlogModel | null> {
+    const query = `
+            UPDATE blogs
+            SET club_review_status = $2,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING *, blog_description AS description;
+        `;
+
+    const result = await pool.query<BlogModel>(query, [blogId, status]);
+    return result.rows[0] ?? null;
+  }
+
+  // Atomics of an approval: publishing publicly AND clearing the live review
+  // state in one statement. Only a pending club draft can pass the WHERE.
+  async approveClubBlog(blogId: string): Promise<BlogModel | null> {
+    const query = `
+            UPDATE blogs
+            SET status = 'published',
+                published_at = COALESCE(published_at, NOW()),
+                scheduled_publish_at = NULL,
+                club_review_status = NULL,
+                updated_at = NOW()
+            WHERE id = $1
+              AND club_id IS NOT NULL
+              AND club_review_status = 'pending'
+              AND status <> 'published'
+            RETURNING *, blog_description AS description;
+        `;
+
+    const result = await pool.query<BlogModel>(query, [blogId]);
+    return result.rows[0] ?? null;
+  }
+
+  // Collaborative draft save with optimistic concurrency: the UPDATE only
+  // lands when the caller saw the current version. Bumps version + 1.
+  async updateBlogVersioned(
+    blogId: string,
+    data: UpdateBlogDTO,
+    expectedVersion: number,
+  ): Promise<BlogModel | null> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (data.title !== undefined) {
+      sets.push(`title = $${paramIndex++}`);
+      params.push(data.title);
+    }
+    if (data.content !== undefined) {
+      sets.push(`content = $${paramIndex++}`);
+      params.push(data.content);
+    }
+    if (data.description !== undefined) {
+      sets.push(`blog_description = $${paramIndex++}`);
+      params.push(data.description);
+    }
+    if (data.images !== undefined) {
+      sets.push(`images = $${paramIndex++}`);
+      params.push(data.images);
+    }
+
+    if (sets.length === 0) return this.findBlogById(blogId);
+
+    sets.push(`version = version + 1`);
+    sets.push("updated_at = NOW()");
+
+    const query = `
+            UPDATE blogs
+            SET ${sets.join(", ")}
+            WHERE id = $${paramIndex++} AND version = $${paramIndex} AND status = 'draft'
+            RETURNING *, blog_description AS description;
+        `;
+    params.push(blogId, expectedVersion);
+
+    const result = await pool.query<BlogModel>(query, params);
+    return result.rows[0] ?? null;
   }
 
   // Update a blog — partial update, omitted fields keep their current value
@@ -177,7 +285,7 @@ class BlogRepository {
   ): Promise<BlogListResult> {
     const offset = (page - 1) * limit;
     const query = `
-            SELECT b.*, u.name AS author_name, u.handle AS author_handle,
+            SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
                    u.avatar AS author_avatar,
                    COUNT(*) OVER() AS total_count
             FROM blogs b
@@ -218,7 +326,7 @@ class BlogRepository {
     const offsetIndex = values.length;
 
     const query = `
-            SELECT b.*, u.name AS author_name, u.handle AS author_handle,
+            SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
                    u.avatar AS author_avatar,
                    EXISTS (
                        SELECT 1 FROM blog_bookmarks bk
@@ -292,7 +400,7 @@ class BlogRepository {
   ): Promise<BlogListResult> {
     const offset = (page - 1) * limit;
     const query = `
-            SELECT b.*, u.name AS author_name, u.handle AS author_handle,
+            SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
                    u.avatar AS author_avatar,
                    TRUE AS bookmarked,
                    COUNT(*) OVER() AS total_count
@@ -323,7 +431,7 @@ class BlogRepository {
   ): Promise<BlogListResult> {
     const offset = (page - 1) * limit;
     const query = `
-            SELECT b.*, u.name AS author_name, u.handle AS author_handle,
+            SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
                    u.avatar AS author_avatar,
                    EXISTS (
                        SELECT 1 FROM blog_bookmarks bk
@@ -342,6 +450,74 @@ class BlogRepository {
 
     const result = await pool.query<BlogWithAuthorModel>(query, [
       viewerId,
+      limit,
+      offset,
+    ]);
+    return {
+      items: result.rows,
+      total: Number(result.rows[0]?.total_count ?? 0),
+    };
+  }
+
+  // Published blogs attributed to a club (the club landing page), with the
+  // actual authors joined. Bookmark flag included for reuse on the client.
+  async listClubPublishedBlogs(
+    clubId: string,
+    viewerId: string,
+    page: number,
+    limit: number,
+  ): Promise<BlogListResult> {
+    const offset = (page - 1) * limit;
+    const query = `
+            SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
+                   u.avatar AS author_avatar,
+                   EXISTS (
+                       SELECT 1 FROM blog_bookmarks bk
+                       WHERE bk.blog_id = b.id AND bk.user_id = $2
+                   ) AS bookmarked,
+                   COUNT(*) OVER() AS total_count
+            FROM blogs b
+            JOIN users u ON u.id = b.user_id
+            WHERE b.club_id = $1 AND b.status = 'published'
+            ORDER BY b.published_at DESC
+            LIMIT $3 OFFSET $4;
+        `;
+
+    const result = await pool.query<BlogWithAuthorModel>(query, [
+      clubId,
+      viewerId,
+      limit,
+      offset,
+    ]);
+    return {
+      items: result.rows,
+      total: Number(result.rows[0]?.total_count ?? 0),
+    };
+  }
+
+  // The club's review queue: submissions pending a decision, newest edits
+  // first. word_count is computed in SQL so the reviewer sees length.
+  async listClubReviewQueue(
+    clubId: string,
+    page: number,
+    limit: number,
+  ): Promise<BlogListResult> {
+    const offset = (page - 1) * limit;
+    const query = `
+            SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
+                   u.avatar AS author_avatar,
+                   (SELECT COUNT(*) FROM regexp_split_to_table(btrim(b.content), '\\s+') AS w WHERE w <> '')::INT
+                       AS word_count,
+                   COUNT(*) OVER() AS total_count
+            FROM blogs b
+            JOIN users u ON u.id = b.user_id
+            WHERE b.club_id = $1 AND b.club_review_status = 'pending'
+            ORDER BY b.updated_at ASC
+            LIMIT $2 OFFSET $3;
+        `;
+
+    const result = await pool.query<BlogWithAuthorModel>(query, [
+      clubId,
       limit,
       offset,
     ]);

@@ -9,18 +9,25 @@ class NotificationRepository {
     recipientId: string;
     actorId: string;
     blogId?: string | null;
-    type: "new_follower" | "new_post";
+    clubId?: string | null; // club context for club_* types
+    type:
+      | "new_follower"
+      | "new_post"
+      | "club_invite"
+      | "club_application"
+      | "club_review";
     eventKey: string;
   }): Promise<boolean> {
     const query = `
-      INSERT INTO notifications (recipient_id, actor_id, blog_id, type, event_key)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO notifications (recipient_id, actor_id, blog_id, club_id, type, event_key)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (event_key) DO NOTHING;
     `;
     const result = await pool.query(query, [
       event.recipientId,
       event.actorId,
       event.blogId ?? null,
+      event.clubId ?? null,
       event.type,
       event.eventKey,
     ]);
@@ -57,18 +64,19 @@ class NotificationRepository {
     const query = `
       SELECT n.*, u.name AS actor_name, u.handle AS actor_handle,
              u.avatar AS actor_avatar, b.title AS blog_title,
+             c.name AS club_name,
              COUNT(*) OVER() AS total_count
       FROM notifications n
       JOIN users u ON u.id = n.actor_id
       LEFT JOIN blogs b ON b.id = n.blog_id
+      LEFT JOIN clubs c ON c.id = n.club_id
       WHERE n.recipient_id = $1
       ORDER BY n.created_at DESC
       LIMIT $2 OFFSET $3;
     `;
-    const result = await pool.query<NotificationRowModel & { total_count: string }>(
-      query,
-      [userId, limit, offset],
-    );
+    const result = await pool.query<
+      NotificationRowModel & { total_count: string }
+    >(query, [userId, limit, offset]);
     return {
       items: result.rows,
       total: Number(result.rows[0]?.total_count ?? 0),

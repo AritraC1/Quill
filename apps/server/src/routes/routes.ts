@@ -5,6 +5,7 @@ import authRoutes from "../domains/auth/auth.routes";
 import userRoutes from "../domains/user/user.routes";
 import blogRoutes from "../domains/blog/blog.routes";
 import notificationRoutes from "../domains/notification/notification.routes";
+import clubRoutes from "../domains/club/club.routes";
 import {
   blogCommentRoutes,
   commentRoutes,
@@ -28,5 +29,9 @@ router.use("/comments", commentRoutes);
 
 // Notification Routes
 router.use("/notifications", notificationRoutes);
+
+// Club Routes — "My Clubs": collectives with membership, applications,
+// invitations, a blog review workflow, chat and collaborative drafts
+router.use("/clubs", clubRoutes);
 
 export default router;

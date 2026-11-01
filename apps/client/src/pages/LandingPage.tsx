@@ -120,7 +120,7 @@ const LandingPage: React.FC = () => {
               better than a group chat.
             </h1>
             <p className="font-editorial mt-6 max-w-md text-lg leading-relaxed text-[#232A3B]/80 sm:text-xl">
-              Quill is a quiet room for essays, notes, and long-form thinking —
+              Quill is a quiet room for essays, blogs, and long-form thinking —
               no feed to chase, no algorithm deciding who reads you.
             </p>
 
@@ -136,7 +136,7 @@ const LandingPage: React.FC = () => {
                 <span className="mt-3 flex items-center gap-2 sm:mt-0">
                   <CurvedArrow className="hidden h-8 w-12 sm:block" />
                   <span className="font-hand -rotate-2 text-2xl text-[#3B6255]">
-                    free while you're drafting
+                    always free
                   </span>
                 </span>
               )}

@@ -10,14 +10,25 @@ import { formatRelativeTime } from "../../../lib/datetime";
 // Rows per page for the dropdown list
 export const PAGE_SIZE = 20;
 
-// "Sam started following you" / "Alex published a new story"
-const messageFor = (n: NotificationDTO): string =>
-  n.type === "new_follower"
-    ? `${n.actor.name} started following you`
-    : `${n.actor.name} published a new story`;
+// "Sam started following you" / "Alex published a new story" / club events
+const messageFor = (n: NotificationDTO): string => {
+  switch (n.type) {
+    case "new_follower":
+      return `${n.actor.name} started following you`;
+    case "club_invite":
+      return `${n.actor.name} invited you to join ${n.club?.name ?? "a club"}`;
+    case "club_application":
+      return `${n.actor.name} applied to join ${n.club?.name ?? "your club"}`;
+    case "club_review":
+      return `${n.actor.name} reviewed your submission in ${n.club?.name ?? "your club"}`;
+    default:
+      return `${n.actor.name} published a new story`;
+  }
+};
 
 const targetFor = (n: NotificationDTO): string | null => {
   if (n.type === "new_follower") return n.actor.handle ? `/${n.actor.handle}` : null;
+  if (n.type === "club_invite" || n.type === "club_application") return "/my-clubs";
   return n.blog ? `/blog/${n.blog.id}` : null;
 };
 
