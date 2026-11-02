@@ -10,6 +10,7 @@ import {
   createBlogSchema,
   updateBlogSchema,
   publishBlogSchema,
+  readingProgressSchema,
 } from "../../core/validation/validation";
 
 class BlogController {
@@ -323,6 +324,29 @@ class BlogController {
         userId,
         String(req.params.id),
         false,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Persist one monotonic progress snapshot for a reading session
+  recordReadingProgress = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const progress = parseBody(readingProgressSchema, req.body);
+      const result = await this.blogService.recordReadingProgress(
+        req.user?.userId,
+        String(req.params.id),
+        progress,
       );
 
       res.status(200).json({

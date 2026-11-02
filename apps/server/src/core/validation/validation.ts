@@ -81,6 +81,12 @@ export const commentReactionSchema = z.object({
   reactionType: z.enum(["like", "heart"]),
 });
 
+export const readingProgressSchema = z.object({
+  sessionId: z.string().uuid(),
+  activeSeconds: z.number().int().min(0).max(86_400),
+  maxScrollPercent: z.number().int().min(0).max(100),
+});
+
 // -------------- CLUBS -------------- //
 
 const clubRuleSchema = z

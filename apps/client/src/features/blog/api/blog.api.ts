@@ -13,6 +13,12 @@ interface BlogListResult {
   total: number;
 }
 
+interface ReadingSessionProgress {
+  sessionId: string;
+  activeSeconds: number;
+  maxScrollPercent: number;
+}
+
 // Create a new blog — the server always persists it as a draft
 export async function createBlogApi(
   payload: CreateBlogDTO,
@@ -62,6 +68,20 @@ export async function deleteBlogApi(id: string): Promise<void> {
 // Single blog (drafts only readable by their author)
 export async function getBlogApi(id: string): Promise<BlogResponseDTO> {
   return fetchWithAuth<BlogResponseDTO>(API_ROUTES.BLOG.GET(id));
+}
+
+export async function recordReadingSessionApi(
+  blogId: string,
+  progress: ReadingSessionProgress,
+): Promise<{ sessionId: string }> {
+  return fetchWithAuth<{ sessionId: string }>(
+    `${API_ROUTES.BLOG.CREATE}/${blogId}/reading-session`,
+    {
+      method: "POST",
+      body: JSON.stringify(progress),
+      keepalive: true,
+    },
+  );
 }
 
 // Feed — every published blog, newest first

@@ -386,6 +386,31 @@ class BlogService {
     return { blogId, isBookmarked: bookmarked };
   }
 
+  async recordReadingProgress(
+    userId: string,
+    blogId: string,
+    progress: {
+      sessionId: string;
+      activeSeconds: number;
+      maxScrollPercent: number;
+    },
+  ): Promise<{ sessionId: string }> {
+    const blog = await this.blogRepo.findBlogById(blogId);
+    if (!blog || blog.status !== "published") {
+      throw new NotFoundError("Published blog not found");
+    }
+
+    await this.blogRepo.recordReadingProgress(
+      userId,
+      blogId,
+      progress.sessionId,
+      progress.activeSeconds,
+      progress.maxScrollPercent,
+    );
+
+    return { sessionId: progress.sessionId };
+  }
+
   // The viewer's saved list ("Saved" tab)
   async listBookmarks(
     userId: string,

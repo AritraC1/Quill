@@ -25,3 +25,34 @@ uvicorn main:app --app-dir src --reload --host 127.0.0.1 --port 8000
 ```
 
 Datasets, credentials, and generated model artifacts should remain out of Git.
+
+## Learning path: recommendations
+
+The first step is collecting trustworthy training signals, not fitting a model.
+The authenticated blog reading page now sends periodic progress snapshots to
+the TypeScript API. Each row in `reading_sessions` represents one reader/blog
+visit and stores the greatest active-time and scroll-depth values received;
+retries therefore do not inflate the measurements. The server marks a session
+as completed when the browser reports at least 90% scroll depth.
+
+On an existing local database, apply the new migration from the repository root
+with `bun run migrate` before testing this flow. Fresh Docker databases apply
+the migration files during initialization.
+
+That completion flag is only a proxy: scrolling to the bottom does not prove a
+person read or understood the story. Active time and scroll depth are separate
+features; later training-data work should compare their usefulness rather than
+treating either as ground truth. Sessions exist only for published blogs and
+authenticated readers. Bookmarks can be joined from `blog_bookmarks`, but
+there is not yet a durable feed-impression log, like action, or blog tag/topic
+schema, so the data is not yet sufficient for a reliable personalized ranker.
+
+Suggested hands-on sequence:
+
+1. Generate and inspect reading-session data with varied progress values.
+2. Record which stories were actually shown in the feed, then combine those
+   impressions with reads, bookmarks, and available blog features.
+3. Build a small offline training table and inspect class balance and leakage.
+4. Train and evaluate a simple baseline ranker before trying more complex ML.
+5. Add a recommendation endpoint and use it to rank the existing "For you"
+   feed, retaining a fallback for new users and service failures.

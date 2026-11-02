@@ -392,6 +392,35 @@ class BlogRepository {
     return true;
   }
 
+  async recordReadingProgress(
+    userId: string,
+    blogId: string,
+    sessionId: string,
+    activeSeconds: number,
+    maxScrollPercent: number,
+  ): Promise<void> {
+    const query = `
+            INSERT INTO reading_sessions (
+                user_id, blog_id, session_id, active_seconds, max_scroll_percent, completed
+            )
+            VALUES ($1, $2, $3, $4, $5, $5 >= 90)
+            ON CONFLICT (user_id, blog_id, session_id)
+            DO UPDATE SET
+                active_seconds = GREATEST(reading_sessions.active_seconds, EXCLUDED.active_seconds),
+                max_scroll_percent = GREATEST(reading_sessions.max_scroll_percent, EXCLUDED.max_scroll_percent),
+                completed = reading_sessions.completed OR EXCLUDED.completed,
+                updated_at = NOW();
+        `;
+
+    await pool.query(query, [
+      userId,
+      blogId,
+      sessionId,
+      activeSeconds,
+      maxScrollPercent,
+    ]);
+  }
+
   // Get all blogs a user has bookmarked (their reading list)
   async listUserBookmarks(
     userId: string,

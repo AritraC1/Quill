@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Bookmark, Share2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "../../../components/layout/AppShell";
 import EmptyState from "../../profile/components/EmptyState";
-import { getBlogApi, bookmarkBlogApi } from "../api/blog.api";
+import {
+  getBlogApi,
+  bookmarkBlogApi,
+  recordReadingSessionApi,
+} from "../api/blog.api";
 import CommentSection from "../components/CommentSection";
 import type { BlogResponseDTO } from "@quill/shared";
 import {
@@ -28,6 +32,7 @@ export const BlogPage = () => {
   const [blog, setBlog] = useState<BlogResponseDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const articleRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -47,6 +52,111 @@ export const BlogPage = () => {
       cancelled = true;
     };
   }, [id]);
+
+  const blogId = blog?.id;
+  const blogStatus = blog?.status;
+
+  useEffect(() => {
+    if (!blogId || blogStatus !== "published") return;
+
+    const sessionId = crypto.randomUUID();
+    let activeMilliseconds = 0;
+    let maxScrollPercent = 0;
+    let lastSentActiveSeconds = -1;
+    let lastSentScrollPercent = -1;
+    let requestInFlight = false;
+    let wasVisible = document.visibilityState === "visible";
+    let lastTick = Date.now();
+
+    const updateTime = () => {
+      const now = Date.now();
+      if (wasVisible) {
+        activeMilliseconds += now - lastTick;
+      }
+      lastTick = now;
+      wasVisible = document.visibilityState === "visible";
+    };
+
+    const updateScrollDepth = () => {
+      const article = articleRef.current;
+      if (!article) return;
+
+      const rect = article.getBoundingClientRect();
+      const articleTop = rect.top + window.scrollY;
+      const articleBottom = rect.bottom + window.scrollY;
+      const visibleBottom = window.scrollY + window.innerHeight;
+      const percent = Math.round(
+        ((visibleBottom - articleTop) / Math.max(articleBottom - articleTop, 1)) *
+          100,
+      );
+      maxScrollPercent = Math.max(
+        maxScrollPercent,
+        Math.max(0, Math.min(100, percent)),
+      );
+    };
+
+    const flush = () => {
+      updateTime();
+      updateScrollDepth();
+      const activeSeconds = Math.floor(activeMilliseconds / 1000);
+      if (
+        requestInFlight ||
+        (activeSeconds === lastSentActiveSeconds &&
+          maxScrollPercent === lastSentScrollPercent)
+      ) {
+        return;
+      }
+
+      const progress = { sessionId, activeSeconds, maxScrollPercent };
+      let saved = false;
+      requestInFlight = true;
+      void recordReadingSessionApi(blogId, progress)
+        .then(() => {
+          lastSentActiveSeconds = progress.activeSeconds;
+          lastSentScrollPercent = progress.maxScrollPercent;
+          saved = true;
+        })
+        .catch((error: unknown) => {
+          console.error("Could not save reading progress", error);
+        })
+        .finally(() => {
+          requestInFlight = false;
+          if (
+            saved &&
+            (Math.floor(activeMilliseconds / 1000) !== lastSentActiveSeconds ||
+              maxScrollPercent !== lastSentScrollPercent)
+          ) {
+            flush();
+          }
+        });
+    };
+
+    const tick = () => {
+      updateTime();
+      updateScrollDepth();
+    };
+    const onVisibilityChange = () => {
+      updateTime();
+      if (document.visibilityState === "hidden") flush();
+    };
+    const onPageHide = () => flush();
+
+    updateScrollDepth();
+    const timer = window.setInterval(tick, 1000);
+    const heartbeat = window.setInterval(flush, 15_000);
+    window.addEventListener("scroll", updateScrollDepth, { passive: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(heartbeat);
+      window.removeEventListener("scroll", updateScrollDepth);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      flush();
+    };
+  }, [blogId, blogStatus]);
 
   const back = () => navigate(-1);
 
@@ -114,7 +224,7 @@ export const BlogPage = () => {
           Back
         </button>
 
-        <article className="mt-8">
+        <article ref={articleRef} className="mt-8">
           <h1 className="font-editorial text-[36px] sm:text-[44px] leading-[1.15] text-[#1B1F1C] tracking-tight">
             {blog.title || "Untitled"}
           </h1>
