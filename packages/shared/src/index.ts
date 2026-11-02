@@ -410,6 +410,11 @@ export interface UpdateClubDTO {
 export interface ClubMemberDTO extends ClubUserDTO {
   role: ClubRole;
   joinedAt: string;
+  /** Chat Hall presence — stamped by the client's heartbeat (~30s);
+   * null = has never opened the club chat */
+  lastSeenAt?: string | null;
+  /** lastSeenAt within the last 2 minutes */
+  online?: boolean;
 }
 
 export interface ClubMemberListDTO {
@@ -528,6 +533,10 @@ export interface ClubMessageDTO {
   conversationId: string;
   sender: ClubUserDTO;
   body: string;
+  /** Relative /uploads/… path of an attached image (resolve with assetUrl) */
+  attachmentUrl?: string | null;
+  /** Soft-deleted: admins/moderators keep history; content is replaced */
+  deleted?: boolean;
   createdAt: string;
 }
 

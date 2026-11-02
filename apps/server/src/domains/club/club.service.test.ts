@@ -30,7 +30,9 @@ function clubRow(overrides: Partial<ClubModel> = {}): ClubModel {
   };
 }
 
-function clubContextRow(overrides: Partial<ClubWithMembershipModel> = {}): ClubWithMembershipModel {
+function clubContextRow(
+  overrides: Partial<ClubWithMembershipModel> = {},
+): ClubWithMembershipModel {
   return {
     ...clubRow(),
     role: "member" as ClubWithMembershipModel["role"],
@@ -94,12 +96,14 @@ function profile(id: string, handle: string, name: string) {
 
 // A service whose real repositories are swapped for mocks (@ts-ignore follows
 // the existing comment/auth service tests pattern)
-function makeService(overrides: {
-  clubRepo?: Record<string, unknown>;
-  blogRepo?: Record<string, unknown>;
-  userRepo?: Record<string, unknown>;
-  notificationService?: Record<string, unknown>;
-} = {}): ClubService {
+function makeService(
+  overrides: {
+    clubRepo?: Record<string, unknown>;
+    blogRepo?: Record<string, unknown>;
+    userRepo?: Record<string, unknown>;
+    notificationService?: Record<string, unknown>;
+  } = {},
+): ClubService {
   const service = new ClubService();
   if (overrides.clubRepo) {
     // @ts-ignore
@@ -254,7 +258,9 @@ describe("ClubService — applications & membership transitions", () => {
         getPendingApplication: mock(async () => null),
         createApplication: mock(async () => applicationRow()),
       },
-      userRepo: { findById: mock(async () => profile("applicant-1", "devp", "Dev Patel")) },
+      userRepo: {
+        findById: mock(async () => profile("applicant-1", "devp", "Dev Patel")),
+      },
     });
 
     const result = await service.applyToClub("club-1", "user-1", {
@@ -315,8 +321,10 @@ describe("ClubService — applications & membership transitions", () => {
     const service = makeService({
       clubRepo: {
         getMembership: mock(async (_clubId: string, userId: string) => {
-          if (userId === "moderator-1") return memberRow({ user_id: "moderator-1", role: "moderator" });
-          if (userId === "existing-1") return memberRow({ user_id: "existing-1" });
+          if (userId === "moderator-1")
+            return memberRow({ user_id: "moderator-1", role: "moderator" });
+          if (userId === "existing-1")
+            return memberRow({ user_id: "existing-1" });
           return null;
         }),
         getPendingInvitation: mock(async (_clubId: string, userId: string) =>
@@ -328,13 +336,17 @@ describe("ClubService — applications & membership transitions", () => {
         findByHandle: mock(async (handle: string) => {
           if (handle === "aarav")
             return profile("new-1", "aarav", "Aarav Mehta");
-          if (handle === "kabir") return profile("existing-1", "kabir", "Kabir Singh");
-          if (handle === "meera") return profile("twice-1", "meera", "Meera Iyer");
+          if (handle === "kabir")
+            return profile("existing-1", "kabir", "Kabir Singh");
+          if (handle === "meera")
+            return profile("twice-1", "meera", "Meera Iyer");
           return null; // unknown handle — skipped, never fatal
         }),
         findById: mock(async () => profile("moderator-1", "mod", "Mod Yue")),
       },
-      notificationService: { notifyClubInvitation: mock(async () => undefined) },
+      notificationService: {
+        notifyClubInvitation: mock(async () => undefined),
+      },
     });
 
     const result = await service.inviteByHandle("club-1", "moderator-1", {
@@ -426,7 +438,9 @@ describe("ClubService — review outcomes & attribution", () => {
         findBlogById: mock(async () => blogRow()),
         setClubReviewStatus,
       },
-      userRepo: { findById: mock(async () => profile("moderator-1", "mod", "Mod")) },
+      userRepo: {
+        findById: mock(async () => profile("moderator-1", "mod", "Mod")),
+      },
       notificationService: { notifyClubReview },
     });
 
@@ -436,10 +450,15 @@ describe("ClubService — review outcomes & attribution", () => {
       }),
     ).rejects.toThrow(BadRequestError);
 
-    const result = await service.reviewSubmission("club-1", "blog-1", "moderator-1", {
-      decision: "changes_requested",
-      note: "Tighten the opening.",
-    });
+    const result = await service.reviewSubmission(
+      "club-1",
+      "blog-1",
+      "moderator-1",
+      {
+        decision: "changes_requested",
+        note: "Tighten the opening.",
+      },
+    );
 
     expect(createReview).toHaveBeenCalledWith({
       blogId: "blog-1",
@@ -448,7 +467,10 @@ describe("ClubService — review outcomes & attribution", () => {
       decision: "changes_requested",
       note: "Tighten the opening.",
     });
-    expect(setClubReviewStatus).toHaveBeenCalledWith("blog-1", "changes_requested");
+    expect(setClubReviewStatus).toHaveBeenCalledWith(
+      "blog-1",
+      "changes_requested",
+    );
     // The changes-requested note reaches the author through the bell
     expect(notifyClubReview).toHaveBeenCalledWith(
       "author-1",
@@ -484,13 +506,20 @@ describe("ClubService — review outcomes & attribution", () => {
         findBlogById: mock(async () => blogRow({ club_id: "club-1" })),
         approveClubBlog,
       },
-      userRepo: { findById: mock(async () => profile("moderator-1", "mod", "Mod")) },
+      userRepo: {
+        findById: mock(async () => profile("moderator-1", "mod", "Mod")),
+      },
       notificationService: { notifyClubReview, fanOutNewPost },
     });
 
-    const result = await service.reviewSubmission("club-1", "blog-1", "moderator-1", {
-      decision: "approved",
-    });
+    const result = await service.reviewSubmission(
+      "club-1",
+      "blog-1",
+      "moderator-1",
+      {
+        decision: "approved",
+      },
+    );
 
     // One atomic statement publishes and clears the review state
     expect(approveClubBlog).toHaveBeenCalledWith("blog-1");
@@ -583,14 +612,20 @@ describe("ClubService — review outcomes & attribution", () => {
         ),
         setClubReviewStatus: mock(async () => blogRow()),
       },
-      userRepo: { findById: mock(async () => profile("author-1", "kabir", "Kabir")) },
+      userRepo: {
+        findById: mock(async () => profile("author-1", "kabir", "Kabir")),
+      },
     });
 
     await expect(
       service.resubmitSubmission("club-1", "blog-1", "intruder-1"),
     ).rejects.toThrow(ForbiddenError);
 
-    const result = await service.resubmitSubmission("club-1", "blog-1", "author-1");
+    const result = await service.resubmitSubmission(
+      "club-1",
+      "blog-1",
+      "author-1",
+    );
     expect(result.clubReviewStatus).toBe("pending");
   });
 
@@ -686,7 +721,9 @@ describe("ClubService — chat access control", () => {
         ),
       },
       userRepo: {
-        findByHandle: mock(async () => profile("outsider-1", "devp", "Dev Patel")),
+        findByHandle: mock(async () =>
+          profile("outsider-1", "devp", "Dev Patel"),
+        ),
       },
     });
 
@@ -762,10 +799,15 @@ describe("ClubService — collaborative writing", () => {
       },
     });
 
-    const result = await service.saveCollaborativeDraft("club-1", "blog-1", "collab-1", {
-      content: "fresh words",
-      version: 3,
-    });
+    const result = await service.saveCollaborativeDraft(
+      "club-1",
+      "blog-1",
+      "collab-1",
+      {
+        content: "fresh words",
+        version: 3,
+      },
+    );
 
     expect(updateBlogVersioned).toHaveBeenCalledWith(
       "blog-1",
@@ -802,11 +844,15 @@ describe("ClubService — collaborative writing", () => {
     });
 
     await expect(
-      service.addCollaborator("club-1", "blog-1", "author-1", { handle: "devp" }),
+      service.addCollaborator("club-1", "blog-1", "author-1", {
+        handle: "devp",
+      }),
     ).rejects.toThrow(BadRequestError);
 
     await expect(
-      service.addCollaborator("club-1", "blog-1", "not-author-1", { handle: "devp" }),
+      service.addCollaborator("club-1", "blog-1", "not-author-1", {
+        handle: "devp",
+      }),
     ).rejects.toThrow(ForbiddenError);
   });
 });

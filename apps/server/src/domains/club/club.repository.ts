@@ -56,7 +56,10 @@ class ClubRepository {
       WHERE c.id = $1
       LIMIT 1;
     `;
-    const result = await pool.query<ClubWithMembershipModel>(query, [id, viewerId]);
+    const result = await pool.query<ClubWithMembershipModel>(query, [
+      id,
+      viewerId,
+    ]);
     return result.rows[0] || null;
   }
 
@@ -152,10 +155,9 @@ class ClubRepository {
       ORDER BY cm.joined_at DESC
       LIMIT $2 OFFSET $3;
     `;
-    const result = await pool.query<ClubWithMembershipModel & { total_count: string }>(
-      query,
-      [userId, limit, offset],
-    );
+    const result = await pool.query<
+      ClubWithMembershipModel & { total_count: string }
+    >(query, [userId, limit, offset]);
     return {
       items: result.rows,
       total: Number(result.rows[0]?.total_count ?? 0),
@@ -193,10 +195,9 @@ class ClubRepository {
       ORDER BY c.created_at DESC
       LIMIT $${limitIndex} OFFSET $${offsetIndex};
     `;
-    const result = await pool.query<ClubWithMembershipModel & { total_count: string }>(
-      query,
-      values,
-    );
+    const result = await pool.query<
+      ClubWithMembershipModel & { total_count: string }
+    >(query, values);
     return {
       items: result.rows,
       total: Number(result.rows[0]?.total_count ?? 0),
@@ -221,10 +222,9 @@ class ClubRepository {
       ORDER BY ci.created_at DESC
       LIMIT $2 OFFSET $3;
     `;
-    const result = await pool.query<ClubInvitationWithContextModel & { total_count: string }>(
-      query,
-      [userId, limit, offset],
-    );
+    const result = await pool.query<
+      ClubInvitationWithContextModel & { total_count: string }
+    >(query, [userId, limit, offset]);
     return {
       items: result.rows,
       total: Number(result.rows[0]?.total_count ?? 0),
@@ -234,7 +234,10 @@ class ClubRepository {
   // --- Membership ---
 
   // Get membership for a user in a club
-  async getMembership(clubId: string, userId: string): Promise<ClubMemberModel | null> {
+  async getMembership(
+    clubId: string,
+    userId: string,
+  ): Promise<ClubMemberModel | null> {
     const query = `
       SELECT * FROM club_members WHERE club_id = $1 AND user_id = $2 LIMIT 1;
     `;
@@ -253,8 +256,22 @@ class ClubRepository {
       VALUES ($1, $2, $3)
       RETURNING *;
     `;
-    const result = await pool.query<ClubMemberModel>(query, [clubId, userId, role]);
+    const result = await pool.query<ClubMemberModel>(query, [
+      clubId,
+      userId,
+      role,
+    ]);
     return result.rows[0]!;
+  }
+
+  // Chat Hall heartbeat — stamps the sender's presence; "online" members are
+  // simply rows whose last_seen_at is fresh when the sidebar is read
+  async touchPresence(clubId: string, userId: string): Promise<void> {
+    await pool.query(
+      `UPDATE club_members SET last_seen_at = NOW()
+       WHERE club_id = $1 AND user_id = $2;`,
+      [clubId, userId],
+    );
   }
 
   // Update member role
@@ -266,7 +283,11 @@ class ClubRepository {
     const query = `
       UPDATE club_members SET role = $3 WHERE club_id = $1 AND user_id = $2 RETURNING *;
     `;
-    const result = await pool.query<ClubMemberModel>(query, [clubId, userId, role]);
+    const result = await pool.query<ClubMemberModel>(query, [
+      clubId,
+      userId,
+      role,
+    ]);
     return result.rows[0] || null;
   }
 
@@ -277,7 +298,8 @@ class ClubRepository {
     return (result.rowCount ?? 0) > 0;
   }
 
-  // List club members with user profiles
+  // List club members with user profiles; last_seen_at feeds the Chat Hall
+  // presence dots ("online" is computed in the service layer)
   async listMembers(
     clubId: string,
     page: number,
@@ -295,10 +317,9 @@ class ClubRepository {
         cm.joined_at ASC
       LIMIT $2 OFFSET $3;
     `;
-    const result = await pool.query<ClubMemberWithUserModel & { total_count: string }>(
-      query,
-      [clubId, limit, offset],
-    );
+    const result = await pool.query<
+      ClubMemberWithUserModel & { total_count: string }
+    >(query, [clubId, limit, offset]);
     return {
       items: result.rows,
       total: Number(result.rows[0]?.total_count ?? 0),
@@ -321,7 +342,9 @@ class ClubRepository {
     const query = `
       SELECT * FROM club_applications WHERE id = $1 LIMIT 1;
     `;
-    const result = await pool.query<ClubApplicationModel>(query, [applicationId]);
+    const result = await pool.query<ClubApplicationModel>(query, [
+      applicationId,
+    ]);
     return result.rows[0] || null;
   }
 
@@ -337,7 +360,11 @@ class ClubRepository {
     clubId: string;
     userId: string;
     decidedBy: string;
-    activity?: { actorId: string | null; type: ClubActivityType; detail: string };
+    activity?: {
+      actorId: string | null;
+      type: ClubActivityType;
+      detail: string;
+    };
   }): Promise<boolean> {
     const client = await pool.connect();
     try {
@@ -350,19 +377,20 @@ class ClubRepository {
           WHERE id = $1 AND club_id = $2 AND user_id = $4 AND status = 'pending'
           RETURNING *;
         `,
-        [
-          data.applicationId,
-          data.clubId,
-          data.decidedBy,
-          data.userId,
-        ],
+        [data.applicationId, data.clubId, data.decidedBy, data.userId],
       );
       if (decided.rowCount === 0) {
         await client.query("ROLLBACK");
         return false;
       }
 
-      this.writeMembershipWithin(client, data.clubId, data.userId, "member", data.activity);
+      this.writeMembershipWithin(
+        client,
+        data.clubId,
+        data.userId,
+        "member",
+        data.activity,
+      );
 
       await client.query("COMMIT");
       return true;
@@ -383,7 +411,11 @@ class ClubRepository {
   async acceptInvitation(data: {
     invitationId: string;
     inviteeId: string;
-    activity?: { actorId: string | null; type: ClubActivityType; detail: string };
+    activity?: {
+      actorId: string | null;
+      type: ClubActivityType;
+      detail: string;
+    };
   }): Promise<ClubInvitationModel | null> {
     const client = await pool.connect();
     try {
@@ -427,7 +459,11 @@ class ClubRepository {
   async createFounderMembership(data: {
     clubId: string;
     userId: string;
-    activity?: { actorId: string | null; type: ClubActivityType; detail: string };
+    activity?: {
+      actorId: string | null;
+      type: ClubActivityType;
+      detail: string;
+    };
   }): Promise<void> {
     const client = await pool.connect();
     try {
@@ -455,7 +491,11 @@ class ClubRepository {
     clubId: string,
     userId: string,
     role: ClubRole,
-    activity?: { actorId: string | null; type: ClubActivityType; detail: string },
+    activity?: {
+      actorId: string | null;
+      type: ClubActivityType;
+      detail: string;
+    },
   ): Promise<void> {
     await client.query(
       `
@@ -534,7 +574,10 @@ class ClubRepository {
       WHERE club_id = $1 AND user_id = $2 AND status = 'pending'
       LIMIT 1;
     `;
-    const result = await pool.query<ClubApplicationModel>(query, [clubId, userId]);
+    const result = await pool.query<ClubApplicationModel>(query, [
+      clubId,
+      userId,
+    ]);
     return result.rows[0] || null;
   }
 
@@ -574,10 +617,9 @@ class ClubRepository {
       ORDER BY ca.created_at ASC
       LIMIT $2 OFFSET $3;
     `;
-    const result = await pool.query<ClubApplicationWithUserModel & { total_count: string }>(
-      query,
-      [clubId, limit, offset],
-    );
+    const result = await pool.query<
+      ClubApplicationWithUserModel & { total_count: string }
+    >(query, [clubId, limit, offset]);
     return {
       items: result.rows,
       total: Number(result.rows[0]?.total_count ?? 0),
@@ -625,7 +667,10 @@ class ClubRepository {
       WHERE club_id = $1 AND invitee_id = $2 AND status = 'pending'
       LIMIT 1;
     `;
-    const result = await pool.query<ClubInvitationModel>(query, [clubId, inviteeId]);
+    const result = await pool.query<ClubInvitationModel>(query, [
+      clubId,
+      inviteeId,
+    ]);
     return result.rows[0] || null;
   }
 
@@ -685,21 +730,29 @@ class ClubRepository {
       WHERE cr.blog_id = $1
       ORDER BY cr.created_at DESC;
     `;
-    const result = await pool.query<ClubReviewWithReviewerModel>(query, [blogId]);
+    const result = await pool.query<ClubReviewWithReviewerModel>(query, [
+      blogId,
+    ]);
     return result.rows;
   }
 
   // --- Collaborators ---
 
   // Add collaborator to a blog
-  async addCollaborator(blogId: string, userId: string): Promise<ClubCollaboratorModel> {
+  async addCollaborator(
+    blogId: string,
+    userId: string,
+  ): Promise<ClubCollaboratorModel> {
     const query = `
       INSERT INTO club_collaborators (blog_id, user_id)
       VALUES ($1, $2)
       ON CONFLICT (blog_id, user_id) DO NOTHING
       RETURNING *;
     `;
-    const result = await pool.query<ClubCollaboratorModel>(query, [blogId, userId]);
+    const result = await pool.query<ClubCollaboratorModel>(query, [
+      blogId,
+      userId,
+    ]);
     return result.rows[0]!;
   }
 
@@ -772,7 +825,9 @@ class ClubRepository {
   // --- Conversations ---
 
   // Get or create group conversation for a club
-  async getOrCreateGroupConversation(clubId: string): Promise<ClubConversationModel> {
+  async getOrCreateGroupConversation(
+    clubId: string,
+  ): Promise<ClubConversationModel> {
     const query = `
       INSERT INTO club_conversations (club_id, is_group)
       VALUES ($1, TRUE)
@@ -785,7 +840,9 @@ class ClubRepository {
   }
 
   // Get group conversation for a club
-  async getGroupConversation(clubId: string): Promise<ClubConversationModel | null> {
+  async getGroupConversation(
+    clubId: string,
+  ): Promise<ClubConversationModel | null> {
     const query = `
       SELECT * FROM club_conversations WHERE club_id = $1 AND is_group = TRUE LIMIT 1;
     `;
@@ -865,9 +922,10 @@ class ClubRepository {
       JOIN users u ON u.id = ccp.user_id
       WHERE ccp.conversation_id = $1;
     `;
-    const result = await pool.query<ClubConversationParticipantWithUserModel>(query, [
-      conversationId,
-    ]);
+    const result = await pool.query<ClubConversationParticipantWithUserModel>(
+      query,
+      [conversationId],
+    );
     return result.rows;
   }
 
@@ -941,19 +999,27 @@ class ClubRepository {
 
   // --- Messages ---
 
-  // Send message
+  // Send message — body may be empty when an image is attached (the DB CHECK
+  // allows either); attachment_url is the relative /uploads/… path
   async sendMessage(data: {
     conversationId: string;
     senderId: string;
     body: string;
+    attachmentUrl?: string | null;
   }): Promise<ClubMessageModel> {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
       const msgResult = await client.query<ClubMessageModel>(
-        `INSERT INTO club_messages (conversation_id, sender_id, body) VALUES ($1, $2, $3) RETURNING *;`,
-        [data.conversationId, data.senderId, data.body],
+        `INSERT INTO club_messages (conversation_id, sender_id, body, attachment_url)
+         VALUES ($1, $2, $3, $4) RETURNING *;`,
+        [
+          data.conversationId,
+          data.senderId,
+          data.body,
+          data.attachmentUrl ?? null,
+        ],
       );
 
       // Update conversation updated_at
@@ -972,6 +1038,36 @@ class ClubRepository {
     }
   }
 
+  // One message by id (with sender profile) — used to check mod rights on delete
+  async getMessageById(
+    messageId: string,
+  ): Promise<ClubMessageWithSenderModel | null> {
+    const query = `
+      SELECT cm.*, u.name AS sender_name, u.handle AS sender_handle, u.avatar AS sender_avatar
+      FROM club_messages cm
+      JOIN users u ON u.id = cm.sender_id
+      WHERE cm.id = $1
+      LIMIT 1;
+    `;
+    const result = await pool.query<ClubMessageWithSenderModel>(query, [
+      messageId,
+    ]);
+    return result.rows[0] || null;
+  }
+
+  // Soft-delete a message: content is blanked but the row stays so the club's
+  // moderation history is never lost
+  async deleteMessage(messageId: string, deletedBy: string): Promise<boolean> {
+    const query = `
+      UPDATE club_messages
+      SET body = '', attachment_url = NULL,
+          deleted_at = NOW(), deleted_by = $2
+      WHERE id = $1 AND deleted_at IS NULL;
+    `;
+    const result = await pool.query(query, [messageId, deletedBy]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
   // Get messages for a conversation
   async getMessages(
     conversationId: string,
@@ -988,10 +1084,9 @@ class ClubRepository {
       ORDER BY cm.created_at DESC
       LIMIT $2 OFFSET $3;
     `;
-    const result = await pool.query<ClubMessageWithSenderModel & { total_count: string }>(
-      query,
-      [conversationId, limit, offset],
-    );
+    const result = await pool.query<
+      ClubMessageWithSenderModel & { total_count: string }
+    >(query, [conversationId, limit, offset]);
     return {
       items: result.rows,
       total: Number(result.rows[0]?.total_count ?? 0),
@@ -1000,7 +1095,9 @@ class ClubRepository {
 
   // --- Dashboard metrics ---
 
-  async getDashboardMetrics(clubId: string): Promise<ClubDashboardMetricsModel> {
+  async getDashboardMetrics(
+    clubId: string,
+  ): Promise<ClubDashboardMetricsModel> {
     const [membersResult, publishedResult, pendingResult, activityResult] =
       await Promise.all([
         pool.query<{ count: number }>(

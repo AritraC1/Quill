@@ -38,6 +38,8 @@ export interface ClubMemberModel {
   user_id: string;
   role: ClubRole;
   joined_at: Date;
+  /** Chat Hall heartbeat timestamp; null = never opened the club chat */
+  last_seen_at: Date | null;
 }
 
 // Membership with user profile for lists
@@ -150,8 +152,7 @@ export interface ClubConversationParticipantModel {
 }
 
 // Participant with user profile
-export interface ClubConversationParticipantWithUserModel
-  extends ClubConversationParticipantModel {
+export interface ClubConversationParticipantWithUserModel extends ClubConversationParticipantModel {
   user_name: string;
   user_handle: string | null;
   user_avatar: string | null;
@@ -163,6 +164,12 @@ export interface ClubMessageModel {
   conversation_id: string;
   sender_id: string;
   body: string;
+  /** Relative /uploads/… path of an attached image (same storage as avatars) */
+  attachment_url: string | null;
+  /** Soft deletion — admins/moderators (or the sender) remove from view,
+   * the row stays so moderation history is preserved */
+  deleted_at: Date | null;
+  deleted_by: string | null;
   created_at: Date;
 }
 

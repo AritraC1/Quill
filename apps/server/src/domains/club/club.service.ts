@@ -94,7 +94,10 @@ function toUserDTO(
         user_avatar?: string | null;
       },
 ): ClubUserDTO {
-  const isUserProfile = "id" in user;
+  // Joined rows (members/applications) carry prefixed user_* columns and
+  // keep their own `id` too — e.g. an application's id is NOT the user id.
+  // So detect the joined shape by the user_id key, never by the presence of id.
+  const isUserProfile = !("user_id" in user);
   return {
     id: isUserProfile ? user.id : user.user_id,
     name: (isUserProfile ? user.name : user.user_name) ?? "",
@@ -120,11 +123,24 @@ function toClubDTO(row: ClubWithMembershipModel): ClubDTO {
   };
 }
 
+// "Online" for the Chat Hall presence dots: a heartbeat within the last 2
+// minutes. The margin is generous so brief network hiccups don't flicker.
+const PRESENCE_WINDOW_MS = 2 * 60 * 1000;
+
+function isOnline(lastSeen: Date | null): boolean {
+  if (!lastSeen) return false;
+  return Date.now() - new Date(lastSeen).getTime() < PRESENCE_WINDOW_MS;
+}
+
 function toMemberDTO(row: ClubMemberWithUserModel): ClubMemberDTO {
   return {
     ...toUserDTO(row),
     role: row.role as ClubMemberDTO["role"],
     joinedAt: new Date(row.joined_at).toISOString(),
+    lastSeenAt: row.last_seen_at
+      ? new Date(row.last_seen_at).toISOString()
+      : null,
+    online: isOnline(row.last_seen_at),
   };
 }
 

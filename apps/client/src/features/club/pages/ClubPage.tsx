@@ -5,6 +5,7 @@ import {
   Check,
   Crown,
   Link2,
+  Pencil,
   Plus,
   Search,
   ShieldCheck,
@@ -314,6 +315,66 @@ const CreateClubModal = ({ onClose, onCreate, onCreateError }: {
   );
 };
 
+/* ---------- edit club details (admin, PATCH /clubs/:id) ---------- */
+const EditClubModal = ({ club, onClose, onSave }: {
+  club: Club;
+  onClose: () => void;
+  onSave: (
+    patch: { name: string; description: string; privacy: Privacy },
+  ) => Promise<void>;
+}) => {
+  const [name, setName] = useState(club.name);
+  const [description, setDescription] = useState(club.description);
+  const [privacy, setPrivacy] = useState<Privacy>(club.privacy);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim() || !description.trim() || saving) return;
+    setSaving(true);
+    try {
+      await onSave({ name: name.trim(), description: description.trim(), privacy });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Edit club details" onClose={onClose}>
+      <Field label="Club name">
+        <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Slow Mornings" maxLength={60} />
+      </Field>
+      <Field label="What is it about?">
+        <textarea className={inputCls} rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="One or two sentences for people deciding whether to join." maxLength={1000} />
+      </Field>
+
+      <Field label="Who can join?" hint="Rules stay in the Rules tab.">
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ["open", "Open to applications", "Anyone can apply. You or a moderator approves."],
+            ["invite", "Invite only", "Hidden from Discover. Members join by invite."],
+          ] as const).map(([id, t, d]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setPrivacy(id)}
+              className={`rounded-xl border p-3 text-left transition-colors ${privacy === id ? "border-[#1F3D2F] bg-[#F0EDE4]" : "border-[#D9D4C5] hover:bg-[#F6F3EA]"}`}
+            >
+              <p className="text-[13px] font-medium text-[#1B1F1C]">{t}</p>
+              <p className="mt-0.5 text-[12px] leading-snug text-[#5C625E]">{d}</p>
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      <div className="mt-7 flex justify-end gap-2">
+        <button onClick={onClose} className={btnGhost}>Cancel</button>
+        <button onClick={() => { void submit(); }} disabled={!name.trim() || !description.trim() || saving} className={btnPrimary}>Save changes</button>
+      </div>
+    </Modal>
+  );
+};
+
 /* ---------- club cards ---------- */
 const ClubCard = ({ club, onOpen, onApply }: { club: Club; onOpen: () => void; onApply: () => void }) => (
   <div className="flex flex-col rounded-2xl border border-[#E6E2D6] bg-white p-5">
@@ -410,7 +471,12 @@ const ReviewCard = ({ sub, rules, onDecide }: {
   );
 };
 
-const ClubDetail = ({ club, onBack, onLeaveRuleSaved }: { club: Club; onBack: () => void; onLeaveRuleSaved?: () => void }) => {
+const ClubDetail = ({ club, onBack, onLeaveRuleSaved, onUpdate }: {
+  club: Club;
+  onBack: () => void;
+  onLeaveRuleSaved?: () => void;
+  onUpdate?: (club: ClubDTO) => void;
+}) => {
   const canModerate = club.role === "admin" || club.role === "moderator";
   const isAdmin = club.role === "admin";
   const [tab, setTab] = useState<DetailTab>(canModerate ? "review" : "members");
@@ -419,6 +485,8 @@ const ClubDetail = ({ club, onBack, onLeaveRuleSaved }: { club: Club; onBack: ()
   const [requests, setRequests] = useState<JoinRequest[]>([]);
   const [rules, setRules] = useState(club.rules.join("\n"));
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [savingDetails, setSavingDetails] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -515,6 +583,22 @@ const ClubDetail = ({ club, onBack, onLeaveRuleSaved }: { club: Club; onBack: ()
     }
   };
 
+  const saveClubDetails = async (
+    patch: { name: string; description: string; privacy: Privacy },
+  ) => {
+    setSavingDetails(true);
+    try {
+      const updated = await updateClubApi(club.id, patch);
+      onUpdate?.(updated);
+      toast("Club details saved");
+    } catch (e) {
+      toast.error(errorMessage(e));
+      throw e;
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
   const copyInvite = async () => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/clubs/${club.id}`);
@@ -542,16 +626,30 @@ const ClubDetail = ({ club, onBack, onLeaveRuleSaved }: { club: Club; onBack: ()
         <div className="min-w-0 flex-1">
           <h1 className="font-editorial text-[32px] sm:text-[40px] leading-[1.15] tracking-tight text-[#1B1F1C]">{club.name}</h1>
           <p className="mt-1.5 max-w-xl text-[15px] leading-6 text-[#5C625E]">{club.description}</p>
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             {club.role && <RoleBadge role={club.role} />}
-            <span className="text-[13px] text-[#8A8F8B]">{club.members} members</span>
+            <span className="text-[13px] text-[#8A8F8B]">
+              {club.members} members
+              {club.privacy === "invite" && <> · Invite only</>}
+            </span>
             {/* the club's public blog page */}
             <Link to={`/clubs/${club.id}`} className="text-[13px] text-[#1F3D2F] hover:underline">Blogs</Link>
           </div>
         </div>
-        {canModerate && (
-          <button onClick={copyInvite} className={btnGhost}><Link2 className="w-4 h-4" /> Copy invite link</button>
-        )}
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => setEditing(true)}
+              className={btnGhost}
+              aria-label="Edit club details"
+            >
+              <Pencil className="w-4 h-4" /> Edit
+            </button>
+          )}
+          {canModerate && (
+            <button onClick={copyInvite} className={btnGhost}><Link2 className="w-4 h-4" /> Copy invite link</button>
+          )}
+        </div>
       </header>
 
       <div className="mt-8"><Tabs value={tab} onChange={setTab} items={tabs} /></div>
@@ -640,6 +738,14 @@ const ClubDetail = ({ club, onBack, onLeaveRuleSaved }: { club: Club; onBack: ()
           </div>
         )}
       </section>
+
+      {editing && (
+        <EditClubModal
+          club={club}
+          onClose={() => setEditing(false)}
+          onSave={saveClubDetails}
+        />
+      )}
     </>
   );
 };
@@ -734,7 +840,15 @@ export const MyClubsPage = () => {
     <AppShell>
       <main className="mx-auto max-w-4xl px-4 sm:px-6 py-6 md:py-10">
         {openClub ? (
-          <ClubDetail club={openClub} onBack={() => setOpenId(null)} />
+          <ClubDetail
+            club={openClub}
+            onBack={() => setOpenId(null)}
+            onUpdate={(updated) => {
+              // Re-map via fromClubDTO so the name/description/privacy edits
+              // flow straight into "Your clubs" and the open detail header
+              setMine(mine.map((c) => (c.id === updated.id ? fromClubDTO(updated) : c)));
+            }}
+          />
         ) : (
           <>
             <div className="flex flex-wrap items-end justify-between gap-4">

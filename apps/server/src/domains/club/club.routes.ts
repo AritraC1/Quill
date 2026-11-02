@@ -14,8 +14,14 @@ router.post("/", clubController.createClub);
 router.get("/mine", clubController.listMine);
 router.get("/discover", clubController.listDiscover);
 router.get("/invitations", clubController.listInvitations);
-router.post("/invitations/:invitationId/accept", clubController.acceptInvitation);
-router.post("/invitations/:invitationId/decline", clubController.declineInvitation);
+router.post(
+  "/invitations/:invitationId/accept",
+  clubController.acceptInvitation,
+);
+router.post(
+  "/invitations/:invitationId/decline",
+  clubController.declineInvitation,
+);
 
 // Landing page & dashboard
 router.get("/:id/landing", clubController.getLandingPage);
@@ -46,13 +52,19 @@ router.get("/:id/submissions", clubController.listSubmissions);
 router.post("/:id/submissions", clubController.createSubmission);
 router.post("/:id/submissions/:blogId/review", clubController.reviewSubmission);
 router.get("/:id/submissions/:blogId/reviews", clubController.listReviews);
-router.post("/:id/submissions/:blogId/resubmit", clubController.resubmitSubmission);
+router.post(
+  "/:id/submissions/:blogId/resubmit",
+  clubController.resubmitSubmission,
+);
 
 // Chat: the club group conversation + member 1:1 conversations.
 // Delivered as ordinary request/response endpoints; the client polls them —
 // no websocket transport exists in this stack yet.
 router.get("/:id/conversations", clubController.listConversations);
-router.post("/:id/conversations/direct", clubController.createDirectConversation);
+router.post(
+  "/:id/conversations/direct",
+  clubController.createDirectConversation,
+);
 router.get(
   "/:id/conversations/:conversationId",
   clubController.getConversation,
@@ -68,8 +80,14 @@ router.post(
 
 // Collaborative writing: club drafts edited by the author + collaborators
 // with optimistic concurrency (version) — not a live simultaneous editor
-router.get("/:id/drafts/:blogId/collaborators", clubController.listCollaborators);
-router.post("/:id/drafts/:blogId/collaborators", clubController.addCollaborator);
+router.get(
+  "/:id/drafts/:blogId/collaborators",
+  clubController.listCollaborators,
+);
+router.post(
+  "/:id/drafts/:blogId/collaborators",
+  clubController.addCollaborator,
+);
 router.delete(
   "/:id/drafts/:blogId/collaborators/:userId",
   clubController.removeCollaborator,
