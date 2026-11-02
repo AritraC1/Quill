@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import {
   ArrowLeft,
   Check,
@@ -545,7 +546,7 @@ const ClubDetail = ({ club, onBack, onLeaveRuleSaved }: { club: Club; onBack: ()
             {club.role && <RoleBadge role={club.role} />}
             <span className="text-[13px] text-[#8A8F8B]">{club.members} members</span>
             {/* the club's public blog page */}
-            <a href={`/clubs/${club.id}`} className="text-[13px] text-[#1F3D2F] hover:underline">Blogs</a>
+            <Link to={`/clubs/${club.id}`} className="text-[13px] text-[#1F3D2F] hover:underline">Blogs</Link>
           </div>
         </div>
         {canModerate && (

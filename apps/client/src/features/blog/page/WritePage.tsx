@@ -27,7 +27,8 @@ import {
   publishBlogApi,
   updateBlogApi,
 } from "../api/blog.api";
-import type { BlogResponseDTO } from "@quill/shared";
+import { createClubSubmissionApi, listMyClubsApi, resubmitClubSubmissionApi } from "../../club/api/club.api";
+import type { BlogResponseDTO, ClubDTO } from "@quill/shared";
 import { firstImageFromContent } from "../lib/blog-story";
 import { markdownToPlainText, wordCount } from "../lib/markdown";
 import { toLocalDateTimeInput } from "../../../lib/datetime";
@@ -80,6 +81,11 @@ export const WritePage = () => {
   // in the click handler (not render) because new Date() is impure
   const [maxScheduleDate, setMaxScheduleDate] = useState("");
 
+  // Club selection for new blogs — only shown when creating a fresh draft
+  const [selectedClub, setSelectedClub] = useState<ClubDTO | null>(null);
+  const [userClubs, setUserClubs] = useState<ClubDTO[]>([]);
+  const [loadingClubs, setLoadingClubs] = useState(false);
+
   // Scheduling form lives in the inspector; the header button opens it
   const [scheduling, setScheduling] = useState(false);
   const [scheduleInput, setScheduleInput] = useState("");
@@ -94,6 +100,26 @@ export const WritePage = () => {
   const blogIdRef = useRef<string | null>(null);
   const draftValuesRef = useRef({ title, content });
   const isDirtyRef = useRef(false);
+
+  // Load user's clubs when creating a new blog (no id param)
+  useEffect(() => {
+    if (id) return; // Only for new blogs
+    let cancelled = false;
+    setLoadingClubs(true);
+    listMyClubsApi({ limit: 50 })
+      .then((result) => {
+        if (!cancelled) setUserClubs(result.items);
+      })
+      .catch(() => {
+        // Silently fail — club selector just won't appear
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingClubs(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   useEffect(() => {
     draftValuesRef.current = { title, content };
@@ -123,6 +149,11 @@ export const WritePage = () => {
         setBlogIdState(loaded.id);
         setTitle(loaded.title);
         setContent(loaded.content);
+        // If this is a club blog, find and select the club
+        if (loaded.clubId && userClubs.length > 0) {
+          const club = userClubs.find((c) => c.id === loaded.clubId);
+          if (club) setSelectedClub(club);
+        }
         setIsLoaded(true);
       })
       .catch(() => {
@@ -135,7 +166,7 @@ export const WritePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate]);
+  }, [id, navigate, userClubs]);
 
   const saveDraft = useCallback(
     async (valuesOverride?: {
@@ -149,7 +180,7 @@ export const WritePage = () => {
         const values = valuesOverride ?? draftValuesRef.current;
         // Carry the first embedded image (if any) so it shows on story cards.
         const images = firstImageFromContent(values.content);
-        const payload: { title: string; content: string; images?: string[] } = {
+        const payload: { title: string; content: string; description?: string; images?: string[] } = {
           title: values.title,
           content: values.content,
         };
@@ -160,6 +191,14 @@ export const WritePage = () => {
             // description is intentionally untouched — autosave must not
             // wipe the author's summary field
             await updateBlogApi(blogIdRef.current, payload);
+          } else if (selectedClub) {
+            // Create a club submission (goes to review queue)
+            const created = await createClubSubmissionApi(selectedClub.id, payload);
+            setBlogIdState(created.id);
+            setBlog(created);
+            // Club submissions are drafts with club_id + club_review_status = 'pending'
+            // Keep the editor mounted; only swap the URL
+            navigate(`/write/${created.id}`, { replace: true });
           } else {
             const created = await createBlogApi(payload);
             setBlogIdState(created.id);
@@ -181,7 +220,7 @@ export const WritePage = () => {
       saveInFlightRef.current = run();
       return saveInFlightRef.current;
     },
-    [navigate],
+    [navigate, selectedClub],
   );
 
   // Autosave — every change stays a server-side draft until published
@@ -205,7 +244,7 @@ export const WritePage = () => {
     setDirty(true);
   };
 
-  // Instant publish — straight to the feed
+  // Instant publish — straight to the feed (personal) or submit to review queue (club)
   const handlePublishNow = async () => {
     if (!title.trim()) {
       toast.error("Add a title before publishing");
@@ -221,14 +260,36 @@ export const WritePage = () => {
       setIsPublishing(false);
       return;
     }
-    // Already published — editing just saves the update, there is no
-    // "publish again" step (the server rejects re-publishing).
+
+    // Club blog: already submitted to review queue via saveDraft (new)
+    // Or re-submit if previously changes_requested/rejected
+    if (isClubBlog && blogId) {
+      const isResubmit = clubReviewStatus === "changes_requested" || clubReviewStatus === "rejected";
+      if (isResubmit && selectedClub) {
+        try {
+          await resubmitClubSubmissionApi(selectedClub.id, blogId);
+          toast.success("Re-submitted for club review");
+        } catch {
+          toast.error("Could not re-submit for review");
+          setIsPublishing(false);
+          return;
+        }
+      } else {
+        toast.success("Submitted for club review");
+      }
+      navigate("/my-clubs");
+      setIsPublishing(false);
+      return;
+    }
+
+    // Personal blog: already published — editing just saves the update
     if (isPublished) {
       toast.success("Story updated");
       navigate("/profile?tab=stories");
       setIsPublishing(false);
       return;
     }
+
     try {
       await publishBlogApi(savedId);
       toast.success("Story published");
@@ -240,10 +301,14 @@ export const WritePage = () => {
     }
   };
 
-  // Scheduled publish — the worker flips it live when the time comes
+  // Scheduled publish — only for personal blogs
   const handleSchedule = async () => {
     if (!title.trim()) {
       toast.error("Add a title before publishing");
+      return;
+    }
+    if (selectedClub) {
+      toast.error("Club blogs cannot be scheduled — they go through review");
       return;
     }
     // datetime-local yields "YYYY-MM-DDTHH:mm" in local time — new Date() parses it as such
@@ -322,11 +387,18 @@ export const WritePage = () => {
 
   const scheduledAt = blog?.scheduledPublishAt ?? null;
   const isPublished = blog?.status === "published";
+  const isClubBlog = !!selectedClub || !!blog?.clubId;
+  const clubReviewStatus = blog?.clubReviewStatus ?? null;
   const words = wordCount(markdownToPlainText(content));
   const readMinutes = Math.max(1, Math.ceil(words / 220));
   const busy = isSaving || isPublishing || isLoading;
   // Disable publish for already-published blogs with no new changes
-  const canPublish = !busy && (!isPublished || dirty);
+  // For club blogs: can "publish" (submit/re-submit) when in reviewable state
+  const canPublish = !busy && (
+    isClubBlog
+      ? dirty || clubReviewStatus === "changes_requested" || clubReviewStatus === "rejected"
+      : !isPublished || dirty
+  );
 
   const saveState = isSaving
     ? "Saving…"
@@ -397,12 +469,87 @@ export const WritePage = () => {
         </p>
       </div>
 
+      {/* Club selector — only for new drafts */}
+      {!id && userClubs.length > 0 && (
+        <Section title="Publish to">
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="publish-target"
+                checked={!selectedClub}
+                onChange={() => setSelectedClub(null)}
+                className="w-4 h-4 accent-[#1F3D2F]"
+              />
+              <div>
+                <p className="text-[13px] font-medium text-[#1B1F1C]">Personal blog</p>
+                <p className="text-[11px] text-[#8A8F8B]">Published to your profile and the main feed</p>
+              </div>
+            </label>
+            {userClubs.map((club) => (
+              <label key={club.id} className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="publish-target"
+                  checked={selectedClub?.id === club.id}
+                  onChange={() => setSelectedClub(club)}
+                  className="w-4 h-4 accent-[#1F3D2F]"
+                />
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-7 h-7 rounded-full font-editorial text-white flex items-center justify-center text-[11px] select-none"
+                    style={{ background: club.color }}
+                  >
+                    {club.name[0]}
+                  </div>
+                  <div>
+                    <p className="text-[13px] font-medium text-[#1B1F1C]">{club.name}</p>
+                    <p className="text-[11px] text-[#8A8F8B]">Submitted for club review • {club.memberCount} members</p>
+                  </div>
+                </div>
+              </label>
+            ))}
+            {loadingClubs && (
+              <p className="text-[12px] text-[#8A8F8B]">Loading your clubs…</p>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* Club info — for existing club blogs */}
+      {id && selectedClub && (
+        <Section title="Club">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded-full font-editorial text-white flex items-center justify-center text-[12px] select-none"
+              style={{ background: selectedClub.color }}
+            >
+              {selectedClub.name[0]}
+            </div>
+            <div>
+              <p className="text-[13px] font-medium text-[#1B1F1C]">{selectedClub.name}</p>
+              <p className="text-[11px] text-[#8A8F8B]">This blog is attributed to this club</p>
+            </div>
+          </div>
+        </Section>
+      )}
+
       <Section title="Status">
         <dl className="space-y-2 text-[13px]">
           <div className="flex justify-between">
             <dt className="text-[#8A8F8B]">State</dt>
             <dd className="font-medium text-[#1B1F1C]">
-              {isPublished ? "Published" : "Draft"}
+              {selectedClub
+                ? blog?.clubReviewStatus
+                  ? blog.clubReviewStatus === "pending"
+                    ? "Pending club review"
+                    : blog.clubReviewStatus === "changes_requested"
+                    ? "Changes requested"
+                    : "Rejected"
+                  : "Draft (club)"
+                : isPublished
+                ? "Published"
+                : "Draft"}
             </dd>
           </div>
           <div className="flex justify-between">
@@ -412,11 +559,25 @@ export const WritePage = () => {
               {isLoading ? "Loading…" : saveState}
             </dd>
           </div>
+          {selectedClub && blog?.clubReviewStatus && (
+            <div className="flex justify-between">
+              <dt className="text-[#8A8F8B]">Review status</dt>
+              <dd className="font-medium text-[#1B1F1C]">
+                {blog.clubReviewStatus === "pending"
+                  ? "Pending review"
+                  : blog.clubReviewStatus === "changes_requested"
+                  ? "Changes requested"
+                  : "Rejected"}
+              </dd>
+            </div>
+          )}
         </dl>
       </Section>
 
-      <Section title="Publish schedule">
-        {scheduledAt && (
+      {/* Scheduling only for personal blogs */}
+      {!selectedClub && (
+        <Section title="Publish schedule">
+          {scheduledAt && (
           <div className="mb-3 rounded-lg border border-[#E6E2D8] bg-white p-3 text-[13px] leading-5 text-[#1B1F1C] shadow-xs">
             <CalendarClock className="mr-1.5 -mt-0.5 inline h-3.5 w-3.5 text-[#8A8F8B]" />
             {formatSchedule(scheduledAt)}
@@ -492,6 +653,7 @@ export const WritePage = () => {
           </button>
         )}
       </Section>
+        )}
     </>
   );
 
@@ -545,15 +707,17 @@ export const WritePage = () => {
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={openScheduler}
-              disabled={busy}
-              className="inline-flex h-8 items-center gap-1 rounded-full border border-[#E6E2D8] bg-white px-2.5 sm:px-3.5 text-[12px] sm:text-[13px] text-[#1B1F1C] transition-colors hover:bg-[#F0EDE4] disabled:opacity-50"
-            >
-              <CalendarClock className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Schedule</span>
-            </button>
+            {!selectedClub && (
+              <button
+                type="button"
+                onClick={openScheduler}
+                disabled={busy}
+                className="inline-flex h-8 items-center gap-1 rounded-full border border-[#E6E2D8] bg-white px-2.5 sm:px-3.5 text-[12px] sm:text-[13px] text-[#1B1F1C] transition-colors hover:bg-[#F0EDE4] disabled:opacity-50"
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Schedule</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void handlePublishNow()}
@@ -565,7 +729,7 @@ export const WritePage = () => {
               ) : (
                 <Upload className="h-3.5 w-3.5" />
               )}
-              <span>Publish</span>
+              <span>{selectedClub ? "Submit for review" : "Publish"}</span>
             </button>
           </div>
         </div>
@@ -623,14 +787,45 @@ export const WritePage = () => {
             {/* Metadata bar */}
             <div className="mb-4 sm:mb-5 flex flex-wrap items-center justify-between gap-2 text-[12px] text-[#8A8F8B]">
               <div className="flex items-center gap-2">
+                {selectedClub && (
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-medium bg-[#F0EDE4] text-[#1F3D2F]"
+                  >
+                    <span
+                      className="w-5 h-5 rounded-full font-editorial text-white flex items-center justify-center text-[10px] select-none"
+                      style={{ background: selectedClub.color }}
+                    >
+                      {selectedClub.name[0]}
+                    </span>
+                    {selectedClub.name}
+                  </span>
+                )}
                 <span
                   className={`rounded-md px-2 py-0.5 font-medium ${
-                    isPublished
+                    selectedClub
+                      ? blog?.clubReviewStatus === "pending"
+                        ? "bg-[#FEF3C7] text-[#B27D56]"
+                        : blog?.clubReviewStatus === "changes_requested"
+                        ? "bg-[#FEF2F2] text-[#BA1A1A]"
+                        : blog?.clubReviewStatus === "rejected"
+                        ? "bg-[#FEF2F2] text-[#BA1A1A]"
+                        : "bg-[#F0EDE4] text-[#5C625E]"
+                      : isPublished
                       ? "bg-[#1F3D2F] text-white"
                       : "bg-[#F0EDE4] text-[#5C625E]"
                   }`}
                 >
-                  {isPublished ? "Published" : "Draft"}
+                  {selectedClub
+                    ? blog?.clubReviewStatus === "pending"
+                      ? "Pending review"
+                      : blog?.clubReviewStatus === "changes_requested"
+                      ? "Changes requested"
+                      : blog?.clubReviewStatus === "rejected"
+                      ? "Rejected"
+                      : "Draft (club)"
+                    : isPublished
+                    ? "Published"
+                    : "Draft"}
                 </span>
                 <span
                   className="inline-flex items-center gap-1.5 text-[#1B1F1C]"

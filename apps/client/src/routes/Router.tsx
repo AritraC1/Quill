@@ -13,6 +13,7 @@ import WritePage from "../features/blog/page/WritePage";
 import BlogPage from "../features/blog/page/BlogPage";
 import SettingsPage from "../features/settings/page/Settings";
 import MyClubsPage from "../features/club/pages/ClubPage";
+import ClubBlogsPage from "../features/club/pages/ClubBlogsPage";
 
 const Router = createBrowserRouter([
   {
@@ -44,7 +45,9 @@ const Router = createBrowserRouter([
           { path: "settings", element: <SettingsPage /> },
           // Twitter-style profile path: /<handle>
           { path: ":handle", element: <ProfilePage /> },
-          { path: "my-clubs", element: <MyClubsPage /> }
+          { path: "my-clubs", element: <MyClubsPage /> },
+          // Club's public blog landing page
+          { path: "clubs/:id", element: <ClubBlogsPage /> }
         ],
       },
     ],

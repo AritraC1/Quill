@@ -4,14 +4,13 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Crown, ShieldCheck, Users } from "lucide-react";
 import { Link } from "react-router-dom";
-import { AppShell } from "../../components/layout/AppShell";
 import EmptyState from "../../profile/components/EmptyState";
 import { StoryCard } from "../../../components/ui/StoryCard";
 import { blogToStory } from "../../blog/lib/blog-story";
 import type { Story } from "../../profile/types/story.types";
 import type { BlogResponseDTO, ClubDTO, ClubRole } from "@quill/shared";
 import { getClubLandingApi } from "../api/club.api";
-import { assetUrl } from "../../auth/api/auth.api";
+import { AppShell } from "../../../components/layout/AppShell";
 
 const CLUB_COLORS = ["#1F3D2F", "#B27D56", "#5C6B4F", "#7A4E3A", "#3B5248"];
 const clubColor = (id: string) =>

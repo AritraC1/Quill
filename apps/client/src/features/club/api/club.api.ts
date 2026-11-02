@@ -211,6 +211,16 @@ export async function createClubSubmissionApi(
   });
 }
 
+// POST /clubs/:id/submissions/:blogId/resubmit — re-submit a handled draft
+export async function resubmitClubSubmissionApi(
+  clubId: string,
+  blogId: string,
+): Promise<{ blogId: string; clubReviewStatus: "pending" }> {
+  return fetchWithAuth(API_ROUTES.CLUB.SUBMISSION_RESUBMIT(clubId, blogId), {
+    method: "POST",
+  });
+}
+
 // GET /clubs/:id/landing — public-facing blog page of a club
 export async function getClubLandingApi(
   clubId: string,
