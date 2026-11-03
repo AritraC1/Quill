@@ -155,6 +155,13 @@ export const clubMessageSchema = z.object({
   body: z.string().trim().min(1).max(5_000), // matches the DB CHECK 1–5000
 });
 
+// Same send endpoint, multipart flavour: an attached image IS the message,
+// so the caption becomes optional (body empty is fine while attachment_url
+// is set — same rule the DB CHECK enforces)
+export const clubChatImageMessageSchema = z.object({
+  body: z.string().trim().max(5_000).default(""),
+});
+
 export const clubDirectConversationSchema = z.object({
   handle: z.string().trim().min(1).max(30),
 });

@@ -1,6 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import type { ClubRole } from "@quill/shared";
 import ClubService from "./club.service";
+import { chatImageUpload } from "./chat-image-upload";
+import { broadcastClubMessage } from "./club.socket";
+import { BadRequestError } from "../../core/errors";
 import {
   parseBody,
   createClubSchema,
@@ -12,6 +15,7 @@ import {
   createClubSubmissionSchema,
   clubReviewSchema,
   clubMessageSchema,
+  clubChatImageMessageSchema,
   clubDirectConversationSchema,
   clubCollaboratorSchema,
   clubCollaborativeSaveSchema,
@@ -524,6 +528,9 @@ class ClubController {
   };
 
   // Send a message — POST /clubs/:id/conversations/:conversationId/messages
+  // Multipart requests (image attached → chatImageUpload) are validated with
+  // the caption-optional schema; plain JSON keeps the text-only rules. One
+  // handler serves both because multer leaves untouched JSON bodies as-is.
   sendMessage = async (
     req: Request,
     res: Response,
@@ -531,13 +538,30 @@ class ClubController {
   ): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const data = parseBody(clubMessageSchema, req.body);
+      const attachmentUrl = req.file
+        ? `/uploads/${req.file.filename}` // same storage avatars use
+        : null;
+      // Text sends fail fast before any session/DB work; images can pass on
+      // caption alone (schema default ""), so reject a true empty send here
+      const data = parseBody(
+        req.file ? clubChatImageMessageSchema : clubMessageSchema,
+        req.body,
+      );
+      if (!data.body && !req.file) {
+        throw new BadRequestError("Message cannot be empty");
+      }
+
+      const clubId = String(req.params.id);
       const result = await this.clubService.sendMessage(
-        String(req.params.id),
+        clubId,
         String(req.params.conversationId),
         userId,
-        data,
+        { ...data, attachmentUrl },
       );
+
+      // Everyone in the room hears REST-sent images too — the socket layer
+      // fans the persisted message out like the socket send handler does
+      broadcastClubMessage(clubId, result);
 
       res.status(201).json({ success: true, data: result });
     } catch (error) {

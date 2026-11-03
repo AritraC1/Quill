@@ -48,6 +48,7 @@ function memberRow(overrides: Partial<ClubMemberModel> = {}): ClubMemberModel {
     user_id: "user-1",
     role: "member",
     joined_at: new Date(),
+    last_seen_at: null,
     ...overrides,
   };
 }

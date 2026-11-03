@@ -285,6 +285,24 @@ export async function createClubDirectConversationApi(
   );
 }
 
+// POST /clubs/:id/conversations/:conversationId/messages — multipart image
+// send (field "image", optional caption "body"). The server stores the file
+// and broadcasts the persisted message to every member in the chat hall.
+export async function sendClubImageMessageApi(
+  clubId: string,
+  conversationId: string,
+  file: File,
+  caption?: string,
+): Promise<ClubMessageDTO> {
+  const form = new FormData();
+  form.append("image", file);
+  if (caption?.trim()) form.append("body", caption.trim());
+  return fetchWithAuth<ClubMessageDTO>(
+    API_ROUTES.CLUB.MESSAGES(clubId, conversationId),
+    { method: "POST", body: form },
+  );
+}
+
 // ---- collaborative drafts ----
 
 // PUT /clubs/:id/drafts/:blogId — versioned collaborative save

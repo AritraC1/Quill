@@ -8,6 +8,7 @@ initSentry();
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { Server as SocketServer } from "socket.io";
 import swaggerUi from "swagger-ui-express";
 import type { Server } from "node:http";
 
@@ -19,6 +20,7 @@ import { env } from "./core/config/env";
 import { logger } from "./core/logger/logger";
 import { apiLimiter } from "./core/rate-limit";
 import { UPLOAD_DIR } from "./domains/user/avatar-upload";
+import initClubChatSocket from "./domains/club/club.socket";
 import { pool } from "./core/database/db";
 import { metricsMiddleware, metricsHandler } from "./core/metrics/metrics";
 import { healthCheckHandler } from "./core/health/health";
@@ -66,8 +68,22 @@ const server: Server = app.listen(env.PORT, () => {
   logger.info(`Server started on port ${env.PORT} (${env.NODE_ENV})`);
 });
 
+// Socket layer — the Club Chat Hall rides the same HTTP server (same origin,
+// same CORS posture as express). The namespace /club-chat handles socket
+// auth (access cookie), club rooms and presence.
+const io = new SocketServer(server, {
+  path: "/socket.io",
+  cors: {
+    origin: env.CLIENT_URL,
+    credentials: true,
+  },
+});
+initClubChatSocket(io);
+
 const shutdown = async () => {
   logger.info("Shutting down server…");
+  // Sockets first so the chat clients see a clean close instead of a hang
+  io.close();
   server.close(async () => {
     try {
       await pool.end();

@@ -14,6 +14,7 @@ import BlogPage from "../features/blog/page/BlogPage";
 import SettingsPage from "../features/settings/page/Settings";
 import MyClubsPage from "../features/club/pages/ClubPage";
 import ClubBlogsPage from "../features/club/pages/ClubBlogsPage";
+import ClubChatPage from "../features/club/pages/ClubChatPage";
 
 const Router = createBrowserRouter([
   {
@@ -47,7 +48,12 @@ const Router = createBrowserRouter([
           { path: ":handle", element: <ProfilePage /> },
           { path: "my-clubs", element: <MyClubsPage /> },
           // Club's public blog landing page
-          { path: "clubs/:id", element: <ClubBlogsPage /> }
+          { path: "clubs/:id", element: <ClubBlogsPage /> },
+          // Club Chat Hall — the live room every member shares
+          {
+            path: "clubs/:id/chat",
+            element: <ClubChatPage />,
+          },
         ],
       },
     ],

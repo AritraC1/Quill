@@ -549,9 +549,42 @@ export interface ClubMessageListDTO {
   total: number;
 }
 
-/** POST body of POST /clubs/:id/conversations/:conversationId/messages */
+/** POST body of POST /clubs/:id/conversations/:conversationId/messages
+ * (text-only sends keep body; image sends ride multipart AND may carry a caption) */
 export interface CreateClubMessageDTO {
   body: string;
+  /** Relative /uploads/… path set by the server after the multipart upload */
+  attachmentUrl?: string | null;
+}
+
+// ---------- Club chat hall (socket contract) ---------- //
+
+/** Result of the socket "club:join" ack (group conversation + history + roster) */
+export interface ClubChatJoinResultDTO {
+  /** The club-wide group conversation the chat hall writes into */
+  conversationId: string;
+  /** Newest-first page of messages, oldest last for rendering */
+  messages: ClubMessageDTO[];
+  total: number;
+  /** Every member with role + presence; refreshed by "club:presence" events */
+  members: ClubMemberDTO[];
+}
+
+/** Broadcast whenever a member's presence dot changes */
+export interface ClubPresenceUpdateDTO {
+  userId: string;
+  clubId: string;
+  online: boolean;
+  /** Fresh lastSeenAt stamp when the update turns a member online */
+  lastSeenAt?: string | null;
+}
+
+/** Ephemeral "is typing" broadcast (never persisted) */
+export interface ClubTypingEventDTO {
+  clubId: string;
+  conversationId: string;
+  userId: string;
+  typing: boolean;
 }
 
 export interface ClubConversationDTO {

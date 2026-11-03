@@ -1,6 +1,7 @@
 import express from "express";
 import { requireAuth } from "../auth/auth.middleware";
 import ClubController from "./club.controller";
+import { chatImageUpload } from "./chat-image-upload";
 
 const router = express.Router();
 const clubController = new ClubController();
@@ -58,8 +59,8 @@ router.post(
 );
 
 // Chat: the club group conversation + member 1:1 conversations.
-// Delivered as ordinary request/response endpoints; the client polls them —
-// no websocket transport exists in this stack yet.
+// History and sending stay REST (pagination + images as multipart); the
+// /club-chat socket layer (club.socket.ts) broadcasts live traffic on top.
 router.get("/:id/conversations", clubController.listConversations);
 router.post(
   "/:id/conversations/direct",
@@ -73,8 +74,11 @@ router.get(
   "/:id/conversations/:conversationId/messages",
   clubController.listMessages,
 );
+// chatImageUpload parses multipart image sends (field "image"); JSON text
+// sends pass through it untouched, so one handler serves both flavours
 router.post(
   "/:id/conversations/:conversationId/messages",
+  chatImageUpload,
   clubController.sendMessage,
 );
 

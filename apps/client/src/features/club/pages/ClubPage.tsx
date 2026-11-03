@@ -5,6 +5,7 @@ import {
   Check,
   Crown,
   Link2,
+  MessageCircle,
   Pencil,
   Plus,
   Search,
@@ -638,6 +639,15 @@ const ClubDetail = ({ club, onBack, onLeaveRuleSaved, onUpdate }: {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {club.role && (
+            <Link
+              to={`/clubs/${club.id}/chat`}
+              className={btnGhost}
+              aria-label="Open the club chat hall"
+            >
+              <MessageCircle className="h-4 w-4" /> Chat hall
+            </Link>
+          )}
           {isAdmin && (
             <button
               onClick={() => setEditing(true)}

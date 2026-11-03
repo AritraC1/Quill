@@ -213,16 +213,20 @@ function toReviewDTO(
   };
 }
 
-function toMessageDTO(row: {
-  id: string;
-  conversation_id: string;
-  sender_id: string;
-  body: string;
-  created_at: Date;
-  sender_name?: string | null;
-  sender_handle?: string | null;
-  sender_avatar?: string | null;
-}): ClubMessageDTO {
+function toMessageDTO(
+  row: {
+    id: string;
+    conversation_id: string;
+    sender_id: string;
+    body: string;
+    attachment_url?: string | null;
+    deleted_at?: Date | null;
+    created_at: Date;
+    sender_name?: string | null;
+    sender_handle?: string | null;
+    sender_avatar?: string | null;
+  },
+): ClubMessageDTO {
   return {
     id: row.id,
     conversationId: row.conversation_id,
@@ -233,6 +237,8 @@ function toMessageDTO(row: {
       avatar: row.sender_avatar ?? null,
     },
     body: row.body,
+    attachmentUrl: row.attachment_url ?? null,
+    deleted: row.deleted_at != null || undefined,
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
@@ -1161,7 +1167,10 @@ class ClubService {
     const message = await this.clubRepo.sendMessage({
       conversationId,
       senderId,
-      body: data.body,
+      // Image-only messages ride multipart with an empty caption; the DB
+      // CHECK allows body empty when an attachment is present
+      body: data.body ?? "",
+      attachmentUrl: data.attachmentUrl ?? null,
     });
     const sender = await this.userRepo.findById(senderId);
     return toMessageDTO({
