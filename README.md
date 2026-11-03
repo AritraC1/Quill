@@ -86,7 +86,6 @@ Prerequisites: Bun 1.3+, Docker Compose (or local PostgreSQL and Redis), and a R
 git clone https://github.com/AritraC1/quill.git
 cd quill
 cp .env.example .env
-# Set DATABASE_URL, REDIS_URL, JWT_SECRET, RESEND_API_KEY, EMAIL_FROM.
 bun install
 bun run migrate
 ```
