@@ -301,7 +301,7 @@ class BlogRepository {
             FROM blogs b
             JOIN users u ON u.id = b.user_id
             WHERE b.user_id = $1 AND b.status = $2
-            ORDER BY b.updated_at DESC
+            ORDER BY b.updated_at DESC, b.id
             LIMIT $3 OFFSET $4;
         `;
 
@@ -564,7 +564,7 @@ class BlogRepository {
             FROM blogs b
             JOIN users u ON u.id = b.user_id
             WHERE b.club_id = $1 AND b.club_review_status = 'pending'
-            ORDER BY b.updated_at ASC
+            ORDER BY b.updated_at DESC
             LIMIT $2 OFFSET $3;
         `;
 

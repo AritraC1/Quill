@@ -390,7 +390,7 @@ const SettingsPage = () => {
       },
       {
         key: "appReplies",
-        title: "Replies and club review feedback",
+        title: "Replies to your comments",
         description: "Mentions are not available yet.",
       },
     ],

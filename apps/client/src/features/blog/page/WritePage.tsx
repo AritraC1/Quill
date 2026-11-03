@@ -27,8 +27,19 @@ import {
   publishBlogApi,
   updateBlogApi,
 } from "../api/blog.api";
-import { createClubSubmissionApi, listMyClubsApi, resubmitClubSubmissionApi } from "../../club/api/club.api";
-import { SETTINGS_GENRES, type BlogResponseDTO, type ClubDTO } from "@quill/shared";
+import {
+  createClubSubmissionApi,
+  getClubApi,
+  listClubSubmissionReviewsApi,
+  listMyClubsApi,
+  resubmitClubSubmissionApi,
+} from "../../club/api/club.api";
+import {
+  SETTINGS_GENRES,
+  type BlogResponseDTO,
+  type ClubDTO,
+  type ClubReviewDTO,
+} from "@quill/shared";
 import { firstImageFromContent } from "../lib/blog-story";
 import { markdownToPlainText, wordCount } from "../lib/markdown";
 import { toLocalDateTimeInput } from "../../../lib/datetime";
@@ -90,6 +101,10 @@ export const WritePage = () => {
   const [userClubs, setUserClubs] = useState<ClubDTO[]>([]);
   const [loadingClubs, setLoadingClubs] = useState(false);
 
+  // The reviewer's latest note when a moderator sent the draft back for
+  // changes (or rejected it) — shown as a banner above the editor
+  const [reviewNote, setReviewNote] = useState<ClubReviewDTO | null>(null);
+
   // Scheduling form lives in the inspector; the header button opens it
   const [scheduling, setScheduling] = useState(false);
   const [scheduleInput, setScheduleInput] = useState("");
@@ -147,17 +162,37 @@ export const WritePage = () => {
 
     let cancelled = false;
     getBlogApi(id)
-      .then((loaded) => {
+      .then(async (loaded) => {
         if (cancelled || blogIdRef.current === id) return;
         setBlog(loaded);
         setBlogIdState(loaded.id);
         setTitle(loaded.title);
         setContent(loaded.content);
         setGenres(loaded.genres ?? []);
-        // If this is a club blog, find and select the club
-        if (loaded.clubId && userClubs.length > 0) {
-          const club = userClubs.find((c) => c.id === loaded.clubId);
-          if (club) setSelectedClub(club);
+        // If this is a club blog, find and select the club — the club list is
+        // only loaded for NEW drafts, so fetch the club even when editing an
+        // existing one (the club drives the resubmit call and the badges)
+        if (loaded.clubId && !selectedClub) {
+          const club =
+            userClubs.find((c) => c.id === loaded.clubId) ??
+            (await getClubApi(loaded.clubId).catch(() => null));
+          if (club && !cancelled) setSelectedClub(club);
+        }
+        // Sent back for changes / rejected: surface the reviewer's latest note
+        if (
+          loaded.clubId &&
+          (loaded.clubReviewStatus === "changes_requested" ||
+            loaded.clubReviewStatus === "rejected")
+        ) {
+          listClubSubmissionReviewsApi(loaded.clubId, loaded.id)
+            .then((result) => {
+              if (!cancelled) setReviewNote(result.items[0] ?? null);
+            })
+            .catch(() => {
+              if (!cancelled) {
+                toast.error("Could not load the review feedback");
+              }
+            });
         }
         setIsLoaded(true);
       })
@@ -171,7 +206,7 @@ export const WritePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate, userClubs]);
+  }, [id, navigate, userClubs, selectedClub]);
 
   const saveDraft = useCallback(
     async (valuesOverride?: {
@@ -289,11 +324,19 @@ export const WritePage = () => {
 
     // Club blog: already submitted to review queue via saveDraft (new)
     // Or re-submit if previously changes_requested/rejected
-    if (isClubBlog && blogId) {
+    if (isClubBlog) {
       const isResubmit = clubReviewStatus === "changes_requested" || clubReviewStatus === "rejected";
-      if (isResubmit && selectedClub) {
+      // The club comes from the selector for new drafts, or from the loaded
+      // blog when editing an existing submission (the selector is hidden there)
+      const clubId = selectedClub?.id || blog?.clubId || null;
+      if (isResubmit) {
+        if (!clubId) {
+          toast.error("Could not identify the club for this submission");
+          setIsPublishing(false);
+          return;
+        }
         try {
-          await resubmitClubSubmissionApi(selectedClub.id, blogId);
+          await resubmitClubSubmissionApi(clubId, savedId);
           toast.success("Re-submitted for club review");
         } catch {
           toast.error("Could not re-submit for review");
@@ -900,6 +943,47 @@ export const WritePage = () => {
                 {words}w · {readMinutes}m
               </div>
             </div>
+
+            {/* A moderator sent this draft back — show their note here */}
+            {reviewNote &&
+              (reviewNote.decision === "changes_requested" ||
+                reviewNote.decision === "rejected") && (
+                <div
+                  className={`mb-4 rounded-xl border p-4 ${
+                    reviewNote.decision === "changes_requested"
+                      ? "border-[#E6D9B8] bg-[#FDF6E7]"
+                      : "border-[#EDC7C7] bg-[#FDF3F3]"
+                  }`}
+                  role="status"
+                >
+                  <p
+                    className={`text-[13px] font-medium ${
+                      reviewNote.decision === "changes_requested"
+                        ? "text-[#8A6A1F]"
+                        : "text-[#BA1A1A]"
+                    }`}
+                  >
+                    {reviewNote.decision === "changes_requested"
+                      ? "Changes requested on this draft"
+                      : "This draft was rejected"}
+                  </p>
+                  {reviewNote.note && (
+                    <p className="mt-1.5 text-[14px] leading-6 text-[#5C5344]">
+                      “{reviewNote.note}”
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-[12px] text-[#8A8F8B]">
+                    {reviewNote.reviewer?.name ?? "A moderator"}
+                    {" · "}
+                    {new Date(reviewNote.createdAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                    {" · Make your changes and press Submit for review"}
+                  </p>
+                </div>
+              )}
 
             <input
               value={title}

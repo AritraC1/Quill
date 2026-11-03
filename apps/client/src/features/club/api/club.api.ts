@@ -5,6 +5,7 @@ import type {
   BlogResponseDTO,
   ClubApplicationDTO,
   ClubApplicationListDTO,
+  ClubReviewListDTO,
   ClubCollaborativeSaveDTO,
   ClubCollaborativeSaveResultDTO,
   ClubDTO,
@@ -213,6 +214,17 @@ export async function createClubSubmissionApi(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+// GET /clubs/:id/submissions/:blogId/reviews — review history for one draft
+// (author sees the note when a moderator sends the draft back)
+export async function listClubSubmissionReviewsApi(
+  clubId: string,
+  blogId: string,
+): Promise<ClubReviewListDTO> {
+  return fetchWithAuth<ClubReviewListDTO>(
+    API_ROUTES.CLUB.SUBMISSION_REVIEWS(clubId, blogId),
+  );
 }
 
 // POST /clubs/:id/submissions/:blogId/resubmit — re-submit a handled draft

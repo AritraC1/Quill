@@ -831,17 +831,28 @@ class ClubService {
       genres: data.genres,
     });
 
-    const author = await this.userName(userId);
+    const author = await this.userRepo.findById(userId);
+    const authorName = author?.name ?? "Someone";
     await this.logActivity(
       clubId,
       userId,
       "submission",
       title
-        ? `${author} submitted "${title}" for review`
-        : `${author} submitted a draft for review`,
+        ? `${authorName} submitted "${title}" for review`
+        : `${authorName} submitted a draft for review`,
     );
 
-    return toBlogResponse(submitted);
+    return {
+      ...toBlogResponse(submitted),
+      author: author
+        ? {
+            id: author.id,
+            name: author.name,
+            handle: author.handle ?? null,
+            avatar: author.avatar ?? null,
+          }
+        : undefined,
+    };
   }
 
   // The review queue — admins/moderators only

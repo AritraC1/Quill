@@ -606,12 +606,13 @@ describe("ClubService — review outcomes & attribution", () => {
   });
 
   it("re-submission only works for the author of a handled draft", async () => {
+    const setClubReviewStatus = mock(async () => blogRow());
     const service = makeService({
       blogRepo: {
         findBlogById: mock(async () =>
           blogRow({ club_review_status: "rejected", user_id: "author-1" }),
         ),
-        setClubReviewStatus: mock(async () => blogRow()),
+        setClubReviewStatus,
       },
       userRepo: {
         findById: mock(async () => profile("author-1", "kabir", "Kabir")),
@@ -628,6 +629,7 @@ describe("ClubService — review outcomes & attribution", () => {
       "author-1",
     );
     expect(result.clubReviewStatus).toBe("pending");
+    expect(setClubReviewStatus).toHaveBeenCalledWith("blog-1", "pending");
   });
 
   it("a submission of another club cannot re-enter this club's queue", async () => {

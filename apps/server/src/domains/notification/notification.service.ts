@@ -238,7 +238,10 @@ class NotificationService {
   // Fired ONLY after a review row was written. The event key is the review's
   // row id, so every review cycle (approve / request changes / reject)
   // notifies the author once — worker retries no-op on the unique index.
-  // Respects the author's `notif_app_replies` preference (review feedback).
+  // Club review feedback is part of the club review workflow itself (the
+  // author cannot act on a decision they never hear about), so it is sent
+  // whenever a decision is recorded — the "Replies" preference does not
+  // suppress it.
   async notifyClubReview(
     authorId: string,
     reviewerId: string | null,
@@ -247,10 +250,6 @@ class NotificationService {
     clubId: string,
   ): Promise<void> {
     try {
-      const settings = await this.userRepo.getNotificationSettings([authorId]);
-      if (settings.get(authorId)?.appReplies === false) {
-        return; // User disabled reply/mention notifications
-      }
       await this.notificationRepo.create({
         recipientId: authorId,
         actorId: reviewerId ?? authorId,

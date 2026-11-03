@@ -30,10 +30,12 @@ const messageFor = (n: NotificationDTO): string => {
   }
 };
 
-const targetFor = (n: NotificationDTO): string | null => {
-  if (n.type === "new_follower") return n.actor.handle ? `/${n.actor.handle}` : null;
+const targetFor = (n: NotificationDTO): string => {
+  if (n.type === "new_follower") return n.actor.handle ? `/${n.actor.handle}` : "/feed";
+  // Review feedback lands in the editor, where the reviewer's note is shown
+  if (n.type === "club_review") return n.blog ? `/write/${n.blog.id}` : "/my-clubs";
   if (n.type === "club_invite" || n.type === "club_application") return "/my-clubs";
-  return n.blog ? `/blog/${n.blog.id}` : null;
+  return n.blog ? `/blog/${n.blog.id}` : "/feed";
 };
 
 const NotificationBell = () => {

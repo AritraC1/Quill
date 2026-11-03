@@ -27,7 +27,55 @@ function blogRow(overrides: Partial<BlogModel> = {}): BlogModel {
   };
 }
 
+function clubMembership(role: "admin" | "moderator" | "member") {
+  return {
+    club_id: "club-1",
+    user_id: "viewer-1",
+    role,
+    joined_at: new Date(),
+    last_seen_at: null,
+  };
+}
+
 describe("BlogService — club review workflow guard", () => {
+  it("allows club moderators to read pending submissions", async () => {
+    const service = new BlogService();
+    // @ts-ignore
+    service.blogRepo = {
+      findBlogById: mock(async () =>
+        blogRow({ club_id: "club-1", club_review_status: "pending" }),
+      ),
+      findBlogWithAuthor: mock(async () => null),
+    };
+    // @ts-ignore
+    service.clubRepo = {
+      getMembership: mock(async () => clubMembership("moderator")),
+    };
+
+    const result = await service.getBlog("moderator-1", "blog-1");
+
+    expect(result.id).toBe("blog-1");
+    expect(result.clubReviewStatus).toBe("pending");
+  });
+
+  it("keeps pending club submissions private from ordinary members", async () => {
+    const service = new BlogService();
+    // @ts-ignore
+    service.blogRepo = {
+      findBlogById: mock(async () =>
+        blogRow({ club_id: "club-1", club_review_status: "pending" }),
+      ),
+    };
+    // @ts-ignore
+    service.clubRepo = {
+      getMembership: mock(async () => clubMembership("member")),
+    };
+
+    await expect(
+      service.getBlog("member-1", "blog-1"),
+    ).rejects.toThrow(ForbiddenError);
+  });
+
   it("refuses to publicly publish a club draft still waiting for review", async () => {
     const service = new BlogService();
     // @ts-ignore

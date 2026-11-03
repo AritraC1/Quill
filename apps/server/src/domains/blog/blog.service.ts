@@ -8,6 +8,7 @@ import type {
   UpdateBlogDTO,
 } from "@quill/shared";
 import BlogRepository from "./blog.repository";
+import ClubRepository from "../club/club.repository";
 import UserRepository from "../user/user.repository";
 import NotificationService from "../notification/notification.service";
 import type { BlogWithAuthorModel } from "./blog.model";
@@ -74,11 +75,13 @@ const MAX_SCHEDULE_DAYS = 24;
 
 class BlogService {
   private blogRepo: BlogRepository;
+  private clubRepo: ClubRepository;
   private userRepo: UserRepository;
   private notificationService: NotificationService;
 
   constructor() {
     this.blogRepo = new BlogRepository();
+    this.clubRepo = new ClubRepository();
     this.userRepo = new UserRepository();
     this.notificationService = new NotificationService();
   }
@@ -109,7 +112,9 @@ class BlogService {
   }
 
   // Get a single blog. Drafts are only visible to their author (writers
-  // preview their own work, the feed never leaks unpublished posts)
+  // preview their own work, the feed never leaks unpublished posts) — except
+  // a club submission waiting in the review queue: the club's admins and
+  // moderators read those so "Read the full blog" works inside the queue.
   async getBlog(userId: string, blogId: string): Promise<BlogResponseDTO> {
     const blog = await this.blogRepo.findBlogById(blogId);
     if (!blog) {
@@ -118,7 +123,18 @@ class BlogService {
 
     const isAuthor = blog.user_id === userId;
     if (blog.status === "draft" && !isAuthor) {
-      throw new ForbiddenError("Drafts are only visible to their author");
+      let isClubReviewer = false;
+      if (blog.club_id && blog.club_review_status === "pending") {
+        const membership = await this.clubRepo.getMembership(
+          blog.club_id,
+          userId,
+        );
+        isClubReviewer =
+          membership?.role === "admin" || membership?.role === "moderator";
+      }
+      if (!isClubReviewer) {
+        throw new ForbiddenError("Drafts are only visible to their author");
+      }
     }
 
     const withContext = await this.blogRepo.findBlogWithAuthor(blogId, userId);
