@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import type { FollowerDTO } from "@quill/shared";
@@ -220,26 +221,57 @@ const FollowersModalContent = ({
             <ul className="divide-y divide-[#F0EDE4]">
               {users.map((u) => (
                 <li key={u.id} className="flex items-center gap-3 px-5 py-3">
-                  {u.avatar ? (
-                    <img
-                      src={assetUrl(u.avatar)}
-                      alt={`${u.name}'s photo`}
-                      className="h-10 w-10 shrink-0 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-full bg-[#B27D56] font-editorial text-lg text-white">
-                      {u.name[0]}
-                    </span>
-                  )}
+                  {u.handle ? (
+                    <Link
+                      to={`/${u.handle}`}
+                      onClick={onClose}
+                      className="group flex min-w-0 flex-1 items-center gap-3"
+                    >
+                      {u.avatar ? (
+                        <img
+                          src={assetUrl(u.avatar)}
+                          alt={`${u.name}'s photo`}
+                          className="h-10 w-10 shrink-0 rounded-full object-cover group-hover:opacity-90 transition-opacity"
+                        />
+                      ) : (
+                        <span className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-full bg-[#B27D56] font-editorial text-lg text-white group-hover:opacity-90 transition-opacity">
+                          {u.name[0]}
+                        </span>
+                      )}
 
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] text-[#1B1F1C]">
-                      {u.name}
-                    </p>
-                    <p className="truncate text-[12px] text-[#8A8F8B]">
-                      {u.handle ? `@${u.handle}` : "No handle yet"}
-                    </p>
-                  </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-medium text-[#1B1F1C] group-hover:text-[#1F3D2F] group-hover:underline transition-colors">
+                          {u.name}
+                        </p>
+                        <p className="truncate text-[12px] text-[#8A8F8B]">
+                          @{u.handle}
+                        </p>
+                      </div>
+                    </Link>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      {u.avatar ? (
+                        <img
+                          src={assetUrl(u.avatar)}
+                          alt={`${u.name}'s photo`}
+                          className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-full bg-[#B27D56] font-editorial text-lg text-white">
+                          {u.name[0]}
+                        </span>
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] text-[#1B1F1C]">
+                          {u.name}
+                        </p>
+                        <p className="truncate text-[12px] text-[#8A8F8B]">
+                          No handle yet
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {u.handle ? (
                     <button
