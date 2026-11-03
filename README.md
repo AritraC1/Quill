@@ -65,7 +65,7 @@ Ideas for future product development; these are not currently implemented:
 - [ ] Live Blog Writing Competition (On-the-Spot Topic)
 - [ ] Content Moderation
 - [x] Add Prometheus, Grafana, and Sentry for observability ([docs](docs/Observability.md))
-- [ ] Full-text search
+- [ ] Collaborative blog writing in a club
 - [ ] Series / Collection of Blogs (grouping)
 - [ ] Upgrade rich text editor (TipTap / ProseMirror)
 - [ ] Report and Block users
