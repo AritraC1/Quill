@@ -20,6 +20,7 @@ Quill is a full-featured blogging platform for publishing, discovering, and savi
 | Background jobs | Redis 7 + BullMQ |
 | Email | Resend |
 | Validation / logging | Zod, Pino |
+| Observability | Prometheus, Grafana, Sentry |
 | Package manager | Bun workspaces |
 | Containers | Docker Compose, Nginx |
 
@@ -63,7 +64,7 @@ Ideas for future product development; these are not currently implemented:
 - [ ] Version history
 - [ ] Live Blog Writing Competition (On-the-Spot Topic)
 - [ ] Content Moderation
-- [ ] Add Prometheus and Grafana for observability
+- [x] Add Prometheus, Grafana, and Sentry for observability ([docs](docs/Observability.md))
 - [ ] Full-text search
 - [ ] Series / Collection of Blogs (grouping)
 - [ ] Upgrade rich text editor (TipTap / ProseMirror)
@@ -71,6 +72,7 @@ Ideas for future product development; these are not currently implemented:
 - [ ] Semantic search over full-text search
 - [ ] AI writing assistant
 - [ ] AI analytics dashboard and report generation
+- [ ] Add skeleton while loading
 
 ## Getting started
 
@@ -100,6 +102,8 @@ docker compose up --build
 | `worker` | Internal only | OTP/follower/digest email, scheduled publishing, notification fan-out |
 | `postgres` | `localhost:5432` | Persistent application data |
 | `redis` | Internal only | BullMQ queue backend |
+| `prometheus` | `http://localhost:9090` | Scrapes API metrics |
+| `grafana` | `http://localhost:3001` | Pre-configured metrics dashboard (`admin`/`admin`) |
 
 The Compose file has development-friendly PostgreSQL defaults and publishes PostgreSQL on the host. Set strong credentials and appropriately restrict access before using it beyond a trusted local environment.
 

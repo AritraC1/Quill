@@ -33,6 +33,9 @@ COPY apps/client ./apps/client
 
 WORKDIR /app/apps/client
 
+ARG VITE_SENTRY_DSN=""
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+
 RUN bun run build
 
 # ---- production stage: serves static bundle via Nginx ----

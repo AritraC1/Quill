@@ -6,6 +6,7 @@ This documentation describes the checked-in implementation and labels work that 
 |---|---|
 | [PRD](./PRD.md) | Product scope, delivered behavior, gaps, and launch blockers |
 | [Architecture](./Architecture.md) | Runtime components, request flows, and deployment topology |
+| [Observability](./Observability.md) | Prometheus metrics, Grafana dashboards, Sentry error tracking, health endpoints |
 | [System Design](./System-Design.md) | Data paths, background processing, operational limits, and future work |
 | [API reference](./API.md) | Mounted REST endpoints, payloads, and implementation details |
 | [Change log](../CHANGE-LOG.md) | Historical technical changes |

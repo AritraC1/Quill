@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSettingsApi, saveSettingsApi } from "../api/settings.api";
 import type { UserSettingsDTO } from "@quill/shared";
+import { toast } from "sonner";
 
 const DEFAULT_SETTINGS: UserSettingsDTO = {
   genres: [],
@@ -22,16 +23,6 @@ export function useSettings() {
   const [settings, setSettings] = useState<UserSettingsDTO>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const savedRef = useRef(settings);
-  const draftRef = useRef(settings);
-
-  useEffect(() => {
-    savedRef.current = settings;
-  }, [settings]);
-
-  useEffect(() => {
-    draftRef.current = settings;
-  }, [settings]);
 
   // Load settings on mount
   useEffect(() => {
@@ -42,8 +33,12 @@ export function useSettings() {
           setSettings(data);
         }
       })
-      .catch(() => {
-        // Keep defaults on error
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        console.error("Could not load saved preferences", error);
+        toast.error(
+          "Could not load your saved preferences. Using defaults for now.",
+        );
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);

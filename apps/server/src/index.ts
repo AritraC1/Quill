@@ -1,6 +1,10 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import { initSentry, Sentry } from "./core/sentry/sentry";
+// Initialize Sentry monitoring as early as possible
+initSentry();
+
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -16,11 +20,14 @@ import { logger } from "./core/logger/logger";
 import { apiLimiter } from "./core/rate-limit";
 import { UPLOAD_DIR } from "./domains/user/avatar-upload";
 import { pool } from "./core/database/db";
+import { metricsMiddleware, metricsHandler } from "./core/metrics/metrics";
+import { healthCheckHandler } from "./core/health/health";
 
 // Declarations
 const app = express();
 
 // Middlewares
+app.use(metricsMiddleware);
 app.use(
   cors({
     origin: env.CLIENT_URL,
@@ -39,9 +46,18 @@ app.use(
   express.static(UPLOAD_DIR, { maxAge: "365d", immutable: true }),
 );
 
+// Observability & Health endpoints
+app.get("/health", healthCheckHandler);
+app.get("/metrics", metricsHandler);
+app.get("/api/health", healthCheckHandler);
+app.get("/api/metrics", metricsHandler);
+
 // Routes
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api", apiLimiter, routes);
+
+// Sentry express error handler should be registered before any other error middleware
+Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 // Server start + graceful shutdown so docker-compose restarts and redeploys

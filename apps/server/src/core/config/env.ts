@@ -33,6 +33,10 @@ const envSchema = z.object({
   // Email service configuration (Resend)
   RESEND_API_KEY: z.string().startsWith("re_"),
   EMAIL_FROM: z.string().min(3).default("Quill <beth.t@example.com>"),
+
+  // Observability & Sentry
+  SENTRY_DSN: z.string().url().optional().or(z.literal("")),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1.0),
 });
 
 // Validates all environment variables at application startup

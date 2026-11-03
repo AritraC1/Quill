@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "./app-error";
 import { logger } from "../logger/logger";
+import { captureException } from "../sentry/sentry";
 
 // Global Express error-handling middleware
 export const errorHandler = (
@@ -59,6 +60,16 @@ export const errorHandler = (
     },
     "Unhandled Internal Server Error",
   );
+
+  // Capture unhandled 500 errors to Sentry
+  captureException(err, {
+    extra: {
+      path: req.originalUrl,
+      method: req.method,
+      query: req.query,
+      ip: req.ip,
+    },
+  });
 
   // Send the appropriate HTTP status code and error message to the client
   res.status(500).json({

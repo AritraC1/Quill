@@ -4,7 +4,7 @@ Small shell helpers for local development.
 
 | File | Purpose |
 |---|---|
-| [`run.sh`](./run.sh) | Starts the root `dev:server`, `dev:client`, and `dev:worker` commands in the background, then waits for them |
+| [`run.sh`](./run.sh) | Starts Docker dependencies (PostgreSQL, Redis, Prometheus, Grafana), then runs `dev:server`, `dev:worker`, and `dev:client` in the background |
 | [`start-ai.sh`](./start-ai.sh) | Builds and starts the Python AI service with Docker Compose |
 
 ## Usage

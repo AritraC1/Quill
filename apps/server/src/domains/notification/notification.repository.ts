@@ -76,10 +76,10 @@ class NotificationRepository {
              u.name AS recipient_name,
              u.email,
              recent_posts.posts
-      FROM user_settings us
-      JOIN users u ON u.id = us.user_id
+      FROM users u
+      LEFT JOIN user_settings us ON u.id = us.user_id
       JOIN recent_posts ON recent_posts.recipient_id = u.id
-      WHERE us.notif_email_digest = TRUE
+      WHERE COALESCE(us.notif_email_digest, TRUE) = TRUE
       ORDER BY u.id;
     `;
     const result = await pool.query<WeeklyDigestRowModel>(query);
