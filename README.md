@@ -54,24 +54,23 @@ The client uses the server for core features. Story search runs server-side acro
 
 Ideas for future product development; these are not currently implemented:
 
-1. Highlighting and annotations
-2. Newsletter, email subscribers, and RSS feeds
-3. A knowledge graph of articles and blogs
-4. Personal reading journal
-5. Reading library 
-6. read-later list (Queue with estimated reading time)
-7. Version history
-8. Live Blog Writing Competition (On-the-Spot Topic) 
-9. Content Moderation
-10. Add Prometheus and Grafana for observation
-11. Full text search
-12. Series / Collection of Blogs (grouping)
-13. Upgrade rich text editor (TipTap / ProseMirror)
-14. Report and Block users
-15. Semantic search over Full text search
-16. AI writing assistant
-17. AI analytics dashboard and report generation
-18. Implement OAuth
+- [ ] Highlighting and annotations
+- [ ] Newsletter, email subscribers, and RSS feeds
+- [ ] A knowledge graph of articles and blogs
+- [ ] Personal reading journal
+- [ ] Reading library
+- [ ] Read-later list (Queue with estimated reading time)
+- [ ] Version history
+- [ ] Live Blog Writing Competition (On-the-Spot Topic)
+- [ ] Content Moderation
+- [ ] Add Prometheus and Grafana for observability
+- [ ] Full-text search
+- [ ] Series / Collection of Blogs (grouping)
+- [ ] Upgrade rich text editor (TipTap / ProseMirror)
+- [ ] Report and Block users
+- [ ] Semantic search over full-text search
+- [ ] AI writing assistant
+- [ ] AI analytics dashboard and report generation
 
 ## Getting started
 
