@@ -89,7 +89,8 @@ export const BlogPage = () => {
       const articleBottom = rect.bottom + window.scrollY;
       const visibleBottom = window.scrollY + window.innerHeight;
       const percent = Math.round(
-        ((visibleBottom - articleTop) / Math.max(articleBottom - articleTop, 1)) *
+        ((visibleBottom - articleTop) /
+          Math.max(articleBottom - articleTop, 1)) *
           100,
       );
       maxScrollPercent = Math.max(
@@ -101,6 +102,7 @@ export const BlogPage = () => {
     const flush = () => {
       updateTime();
       updateScrollDepth();
+
       const activeSeconds = Math.floor(activeMilliseconds / 1000);
       if (
         requestInFlight ||
@@ -111,8 +113,10 @@ export const BlogPage = () => {
       }
 
       const progress = { sessionId, activeSeconds, maxScrollPercent };
+
       let saved = false;
       requestInFlight = true;
+
       void recordReadingSessionApi(blogId, progress)
         .then(() => {
           lastSentActiveSeconds = progress.activeSeconds;
@@ -138,15 +142,20 @@ export const BlogPage = () => {
       updateTime();
       updateScrollDepth();
     };
+
     const onVisibilityChange = () => {
       updateTime();
       if (document.visibilityState === "hidden") flush();
     };
+
     const onPageHide = () => flush();
 
     updateScrollDepth();
+
     const timer = window.setInterval(tick, 1000);
+
     const heartbeat = window.setInterval(flush, 15_000);
+
     window.addEventListener("scroll", updateScrollDepth, { passive: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", onPageHide);
@@ -168,6 +177,7 @@ export const BlogPage = () => {
       await navigator.clipboard.writeText(
         `${window.location.origin}/blog/${blog!.id}`,
       );
+
       toast("Blog link copied");
     } catch {
       toast.error("Couldn't copy the link");
@@ -176,9 +186,12 @@ export const BlogPage = () => {
 
   const toggleBookmark = () => {
     if (!blog) return;
+
     const next = !blog.isBookmarked;
+
     // optimistic, revert on failure
     setBlog({ ...blog, isBookmarked: next });
+
     bookmarkBlogApi(blog.id, next)
       .then(() => toast(next ? "Saved to reading list" : "Removed from saved"))
       .catch(() => {
