@@ -43,7 +43,8 @@ export function blogToStory(blog: BlogResponseDTO, ownHandle?: string): Story {
       // server paths like /uploads/… are resolved against the API origin
       avatar: assetUrl(blog.author?.avatar),
     },
-    topic: "Writing",
+    topic: blog.genres?.[0] ?? "Writing",
+    genres: blog.genres ?? [],
     readTime: `${readTimeMinutes(words)} min read`,
     publishedDate: blog.publishedAt ? formatDate(blog.publishedAt) : "Draft",
     imageUrl: blog.images?.[0] ?? firstImageFromContent(blog.content),

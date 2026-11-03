@@ -159,3 +159,14 @@ export async function listFollowingFeedApi(
     `${API_ROUTES.BLOG.FOLLOWING}?page=${page}&limit=${limit}`,
   );
 }
+
+// Server-side full-text search
+export async function searchBlogsApi(
+  query: string,
+  page = 1,
+  limit = 20,
+): Promise<BlogListResult> {
+  return fetchWithAuth<BlogListResult>(
+    `${API_ROUTES.BLOG.CREATE}?page=${page}&limit=${limit}&search=${encodeURIComponent(query)}`,
+  );
+}

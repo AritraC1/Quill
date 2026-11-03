@@ -822,6 +822,7 @@ class ClubService {
       title,
       content: data.content,
       description: data.description,
+      genres: data.genres,
     });
 
     const author = await this.userName(userId);

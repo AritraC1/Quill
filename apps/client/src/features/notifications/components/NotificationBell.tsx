@@ -15,6 +15,10 @@ const messageFor = (n: NotificationDTO): string => {
   switch (n.type) {
     case "new_follower":
       return `${n.actor.name} started following you`;
+    case "scheduled_post_published":
+      return "Your scheduled story is now live";
+    case "comment_reply":
+      return `${n.actor.name} replied to your comment`;
     case "club_invite":
       return `${n.actor.name} invited you to join ${n.club?.name ?? "a club"}`;
     case "club_application":

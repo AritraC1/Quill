@@ -1,8 +1,13 @@
 import { RouterProvider } from "react-router-dom";
-import Router from "./routes/Router"
+import Router from "./routes/Router";
+import { BlogTtsProvider } from "./features/blog/context/BlogTtsContext";
 
 function App() {
-  return <RouterProvider router={Router} />;
+  return (
+    <BlogTtsProvider>
+      <RouterProvider router={Router} />
+    </BlogTtsProvider>
+  );
 }
 
-export default App
+export default App;

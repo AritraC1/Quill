@@ -95,6 +95,9 @@ describe("CommentService", () => {
     const createComment = mock(async () => commentRow());
     // @ts-ignore
     service.commentRepo.createComment = createComment;
+    const notifyCommentReply = mock(async () => {});
+    // @ts-ignore
+    service.notificationService = { notifyCommentReply };
 
     await service.createComment("reader-1", "blog-1", {
       body: "Hi",
@@ -105,6 +108,54 @@ describe("CommentService", () => {
       body: "Hi",
       parentCommentId: "reply-7", // the ancestor, not the second-level comment
     });
+    expect(notifyCommentReply).toHaveBeenCalledWith(
+      "author-1",
+      "reader-1",
+      "blog-1",
+      "comment-1",
+    );
+  });
+
+  it("notifies the comment author when someone replies", async () => {
+    const service = new CommentService();
+    // @ts-ignore
+    service.blogRepo = {
+      findBlogById: mock(async () => blogRow({ status: "published" })),
+    };
+    // @ts-ignore
+    service.commentRepo = {
+      findCommentById: mock(async () => commentRow({ user_id: "parent-1" })),
+      createComment: mock(async () => commentRow({
+        id: "reply-1",
+        user_id: "reader-1",
+        parent_comment_id: "comment-1",
+      })),
+      findWithAuthor: mock(async () => ({
+        ...commentRow({
+          id: "reply-1",
+          user_id: "reader-1",
+          parent_comment_id: "comment-1",
+        }),
+        author_name: "Reader",
+        author_handle: "reader",
+        author_avatar: null,
+      })),
+    };
+    const notifyCommentReply = mock(async () => {});
+    // @ts-ignore
+    service.notificationService = { notifyCommentReply };
+
+    await service.createComment("reader-1", "blog-1", {
+      body: "A reply",
+      parentCommentId: "comment-1",
+    });
+
+    expect(notifyCommentReply).toHaveBeenCalledWith(
+      "parent-1",
+      "reader-1",
+      "blog-1",
+      "reply-1",
+    );
   });
 
   it("forbids editing someone else's comment", async () => {

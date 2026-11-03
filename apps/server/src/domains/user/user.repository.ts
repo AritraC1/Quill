@@ -488,6 +488,55 @@ class UserRepository {
   }
 
   // Delete a user
+
+  // Get notification preferences for a batch of user IDs
+  // Returns a map of userId -> { notif_app_posts, notif_app_followers, ... }
+  async getNotificationSettings(
+    userIds: string[],
+  ): Promise<
+    Map<
+      string,
+      {
+        appPosts: boolean;
+        appFollowers: boolean;
+        appScheduled: boolean;
+        appReplies: boolean;
+        emailDigest: boolean;
+        emailFollowers: boolean;
+        emailNews: boolean;
+      }
+    >
+  > {
+    if (userIds.length === 0) return new Map();
+
+    const query = `
+      SELECT requested.user_id,
+             COALESCE(us.notif_app_posts, TRUE)        AS notif_app_posts,
+             COALESCE(us.notif_app_followers, TRUE)    AS notif_app_followers,
+             COALESCE(us.notif_app_scheduled, TRUE)    AS notif_app_scheduled,
+             COALESCE(us.notif_app_replies, FALSE)     AS notif_app_replies,
+             COALESCE(us.notif_email_digest, TRUE)     AS notif_email_digest,
+             COALESCE(us.notif_email_followers, FALSE) AS notif_email_followers,
+             FALSE                                     AS notif_email_news
+      FROM unnest($1::uuid[]) AS requested(user_id)
+      LEFT JOIN user_settings us ON us.user_id = requested.user_id;
+    `;
+
+    const result = await pool.query(query, [userIds]);
+    const map = new Map();
+    for (const row of result.rows) {
+      map.set(row.user_id, {
+        appPosts: row.notif_app_posts,
+        appFollowers: row.notif_app_followers,
+        appScheduled: row.notif_app_scheduled,
+        appReplies: row.notif_app_replies,
+        emailDigest: row.notif_email_digest,
+        emailFollowers: row.notif_email_followers,
+        emailNews: row.notif_email_news,
+      });
+    }
+    return map;
+  }
 }
 
 export default UserRepository;

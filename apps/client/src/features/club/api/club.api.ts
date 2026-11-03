@@ -8,7 +8,6 @@ import type {
   ClubCollaborativeSaveDTO,
   ClubCollaborativeSaveResultDTO,
   ClubDTO,
-  ClubInvitationDTO,
   ClubInvitationListDTO,
   ClubInvitationResponseDTO,
   ClubInvitationResultDTO,
@@ -203,7 +202,12 @@ export async function reviewClubSubmissionApi(
 // POST /clubs/:id/submissions — submit a draft into the review queue
 export async function createClubSubmissionApi(
   clubId: string,
-  payload: { title?: string; content?: string; description?: string },
+  payload: {
+    title?: string;
+    content?: string;
+    description?: string;
+    genres?: string[];
+  },
 ): Promise<BlogResponseDTO> {
   return fetchWithAuth<BlogResponseDTO>(API_ROUTES.CLUB.SUBMISSIONS(clubId), {
     method: "POST",

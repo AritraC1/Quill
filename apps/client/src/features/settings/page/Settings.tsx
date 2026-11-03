@@ -53,9 +53,10 @@ const SECTIONS: { id: SectionId; label: string; Icon: LucideIcon }[] = [
 // Genre chips — same list the server exports, so they cannot drift
 const GENRES: string[] = [...SETTINGS_GENRES];
 
-const THEME_PREVIEW: Record<Exclude<ReadingTheme, "dark">, [string, string]> = {
+const THEME_PREVIEW: Record<ReadingTheme, [string, string]> = {
   light: ["#FFFFFF", "#1B1F1C"],
   sepia: ["#F4EFE3", "#3B3224"],
+  dark: ["#1B211D", "#E6E2D8"],
 };
 
 // Seed shown while GET /user/settings is in flight and as the reset basis;
@@ -368,8 +369,7 @@ const SettingsPage = () => {
     }
   };
 
-  const previewColors =
-    THEME_PREVIEW[draft.theme === "dark" ? "light" : draft.theme];
+  const previewColors = THEME_PREVIEW[draft.theme];
 
   const notificationRows: {
     key: NotificationKey;
@@ -378,13 +378,21 @@ const SettingsPage = () => {
   }[][] = [
     [
       { key: "appPosts", title: "New posts from writers you follow" },
-      { key: "appFollowers", title: "New followers" },
+      {
+        key: "appFollowers",
+        title: "Follows and club invitations",
+        description: "When someone follows you or invites you to a club.",
+      },
       {
         key: "appScheduled",
         title: "Scheduled post published",
         description: "Know when a post you scheduled goes live.",
       },
-      { key: "appReplies", title: "Replies and mentions" },
+      {
+        key: "appReplies",
+        title: "Replies and club review feedback",
+        description: "Mentions are not available yet.",
+      },
     ],
     [
       {
@@ -397,7 +405,7 @@ const SettingsPage = () => {
       {
         key: "emailNews",
         title: "Product updates",
-        description: "Occasional news about new Quill features.",
+        description: "Unavailable until Quill launches a product newsletter.",
       },
     ],
   ];
@@ -643,7 +651,7 @@ const SettingsPage = () => {
                 </Row>
                 <Row
                   title="Theme"
-                  description="Dark mode is not available yet."
+                  description="Changes the background and text colors of stories."
                 >
                   <Segmented<ReadingTheme>
                     label="Theme"
@@ -652,7 +660,7 @@ const SettingsPage = () => {
                     options={[
                       { value: "light", label: "Light" },
                       { value: "sepia", label: "Sepia" },
-                      { value: "dark", label: "Dark", disabled: true },
+                      { value: "dark", label: "Dark" },
                     ]}
                   />
                 </Row>
@@ -686,9 +694,10 @@ const SettingsPage = () => {
                 lead="Choose what Quill tells you about."
               />
               <div className="mb-5">
-                <Note tone="warn">
-                  Notifications are coming soon. You can set your preferences
-                  now and they will apply when delivery starts.
+                <Note tone="info">
+                  In-app alerts are delivered in Quill. Email alerts require the
+                  background worker; weekly digests are sent on Mondays at 09:00
+                  UTC. Product updates are unavailable until a newsletter launches.
                 </Note>
               </div>
               {(["In the app", "By email"] as const).map((title, i) => (
@@ -703,6 +712,7 @@ const SettingsPage = () => {
                         label={`${title}: ${r.title}`}
                         checked={draft.notifications[r.key]}
                         onChange={(on) => setNotification(r.key, on)}
+                        disabled={r.key === "emailNews"}
                       />
                     </Row>
                   ))}

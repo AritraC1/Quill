@@ -53,8 +53,8 @@ class BlogRepository {
   // Create a new blog — always starts as a draft until published explicitly
   async createNewBlog(userId: string, data: CreateBlogDTO): Promise<BlogModel> {
     const query = `
-            INSERT INTO blogs (user_id, title, content, blog_description, images, status)
-            VALUES ($1, $2, $3, $4, $5, 'draft')
+            INSERT INTO blogs (user_id, title, content, blog_description, images, genres, status)
+            VALUES ($1, $2, $3, $4, $5, $6, 'draft')
             RETURNING *, blog_description AS description;
         `;
 
@@ -64,6 +64,7 @@ class BlogRepository {
       data.content ?? "",
       data.description ?? "",
       data.images ?? null,
+      data.genres ?? [],
     ]);
     return result.rows[0]!;
   }
@@ -76,8 +77,8 @@ class BlogRepository {
     data: CreateBlogDTO,
   ): Promise<BlogModel> {
     const query = `
-            INSERT INTO blogs (user_id, club_id, club_review_status, title, content, blog_description, images, status)
-            VALUES ($1, $2, 'pending', $3, $4, $5, $6, 'draft')
+            INSERT INTO blogs (user_id, club_id, club_review_status, title, content, blog_description, images, genres, status)
+            VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, 'draft')
             RETURNING *, blog_description AS description;
         `;
 
@@ -88,6 +89,7 @@ class BlogRepository {
       data.content ?? "",
       data.description ?? "",
       data.images ?? null,
+      data.genres ?? [],
     ]);
     return result.rows[0]!;
   }
@@ -158,6 +160,10 @@ class BlogRepository {
       sets.push(`images = $${paramIndex++}`);
       params.push(data.images);
     }
+    if (data.genres !== undefined) {
+      sets.push(`genres = $${paramIndex++}`);
+      params.push(data.genres);
+    }
 
     if (sets.length === 0) return this.findBlogById(blogId);
 
@@ -200,6 +206,10 @@ class BlogRepository {
     if (data.images !== undefined) {
       sets.push(`images = $${paramIndex++}`);
       params.push(data.images);
+    }
+    if (data.genres !== undefined) {
+      sets.push(`genres = $${paramIndex++}`);
+      params.push(data.genres);
     }
 
     sets.push("updated_at = NOW()");
@@ -308,11 +318,14 @@ class BlogRepository {
   }
 
   // Get all published blogs (the feed), with viewer bookmark flag
+  // Optional `authorId` filters by author. Optional `search` does full-text search.
   async listPublishedBlogs(
     viewerId: string,
     authorId: string | null,
     page: number,
     limit: number,
+    search?: string,
+    preferredGenres: string[] = [],
   ): Promise<BlogListResult> {
     const offset = (page - 1) * limit;
     const values: unknown[] = [viewerId];
@@ -320,6 +333,16 @@ class BlogRepository {
     if (authorId) {
       values.push(authorId);
       authorFilter = `AND b.user_id = $${values.length}`;
+    }
+    let searchFilter = "";
+    if (search) {
+      values.push(`%${search.toLowerCase()}%`);
+      searchFilter = `AND (LOWER(b.title) LIKE $${values.length} OR LOWER(b.content) LIKE $${values.length} OR LOWER(b.blog_description) LIKE $${values.length})`;
+    }
+    let genreFilter = "";
+    if (preferredGenres.length > 0) {
+      values.push(preferredGenres);
+      genreFilter = `AND (cardinality(b.genres) = 0 OR b.genres && $${values.length}::text[])`;
     }
     values.push(limit, offset);
     const limitIndex = values.length - 1;
@@ -335,7 +358,7 @@ class BlogRepository {
                    COUNT(*) OVER() AS total_count
             FROM blogs b
             JOIN users u ON u.id = b.user_id
-            WHERE b.status = 'published' ${authorFilter}
+            WHERE b.status = 'published' ${authorFilter} ${searchFilter} ${genreFilter}
             ORDER BY b.published_at DESC
             LIMIT $${limitIndex} OFFSET $${offsetIndex};
         `;

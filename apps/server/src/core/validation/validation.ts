@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BadRequestError } from "../errors";
+import { SETTINGS_GENRES } from "@quill/shared";
 
 // The repo installed zod but never used it for request bodies — payloads were
 // hand-checked inconsistently (or not at all). These schemas are the core
@@ -58,6 +59,7 @@ export const createBlogSchema = z.object({
   title: z.string().max(200).optional(),
   content: z.string().max(500_000).optional(),
   description: z.string().max(500).optional(),
+  genres: z.array(z.enum(SETTINGS_GENRES)).max(5).optional(),
   // images: z.array(z.string().max(10_000)).max(20).optional(),
 });
 
@@ -141,6 +143,7 @@ export const createClubSubmissionSchema = z.object({
   title: z.string().max(200).optional(),
   content: z.string().max(500_000).optional(),
   description: z.string().max(500).optional(),
+  genres: z.array(z.enum(SETTINGS_GENRES)).max(5).optional(),
 });
 
 export const clubReviewSchema = z.object({

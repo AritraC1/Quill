@@ -206,6 +206,7 @@ export interface CreateBlogDTO {
   content?: string; // markdown / rich-text source
   description?: string;
   images?: string[];
+  genres?: string[];
 }
 
 export interface UpdateBlogDTO {
@@ -213,6 +214,7 @@ export interface UpdateBlogDTO {
   content?: string;
   description?: string;
   images?: string[];
+  genres?: string[];
 }
 
 export interface BlogAuthorDTO {
@@ -230,6 +232,7 @@ export interface BlogResponseDTO {
   content: string;
   description: string;
   images?: string[] | null;
+  genres: string[];
   status: BlogStatus;
   publishedAt: string | null;
   scheduledPublishAt?: string | null; // set while waiting for the publishing worker
@@ -496,6 +499,7 @@ export interface CreateClubSubmissionDTO {
   title?: string;
   content?: string;
   description?: string;
+  genres?: string[];
 }
 
 /** Result of POST /clubs/:id/submissions/:blogId (re-submit a handled draft) */
@@ -631,11 +635,17 @@ export interface ClubCollaborativeSaveResultDTO {
  *  - "club_invite":  a club member invites a writer (recipient = the invitee)
  *  - "club_review":  a reviewer decides on the author's club submission
  *                    (recipient = the author)
+ *  - "scheduled_post_published": a scheduled story is live (recipient = author)
+ *  - "comment_reply": someone replies to the recipient's comment
  * "club_application" exists in the DB too; the server does not create it yet.
  */
 export type NotificationType =
   | "new_follower"
   | "new_post"
+  | "scheduled_post_published"
+  | "comment_reply"
+  | "scheduled_post_published"
+  | "comment_reply"
   | "club_invite"
   | "club_application"
   | "club_review";

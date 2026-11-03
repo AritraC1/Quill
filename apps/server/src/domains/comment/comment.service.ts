@@ -14,6 +14,7 @@ import type {
 import CommentRepository from "./comment.repository";
 import CommentReactionRepository from "./comment-reaction.repository";
 import BlogRepository from "../blog/blog.repository";
+import NotificationService from "../notification/notification.service";
 import type { CommentRowModel, CommentWithContextModel } from "./comment.model";
 import type {
   CommentReactionCountRowModel,
@@ -45,11 +46,13 @@ class CommentService {
   private commentRepo: CommentRepository;
   private reactionRepo: CommentReactionRepository;
   private blogRepo: BlogRepository;
+  private notificationService: NotificationService;
 
   constructor() {
     this.commentRepo = new CommentRepository();
     this.reactionRepo = new CommentReactionRepository();
     this.blogRepo = new BlogRepository();
+    this.notificationService = new NotificationService();
   }
 
   // ---------- Serialization ----------
@@ -208,6 +211,7 @@ class CommentService {
     }
 
     let parentCommentId: string | null = null;
+    let replyRecipientId: string | null = null;
     if (data.parentCommentId) {
       const parent = await this.commentRepo.findCommentById(
         data.parentCommentId,
@@ -224,12 +228,28 @@ class CommentService {
       // Threads stay two levels: replying to a reply attaches under its
       // top-level ancestor (the conversation is still with that reader).
       parentCommentId = parent.parent_comment_id ?? parent.id;
+      if (parent.parent_comment_id) {
+        const root = await this.commentRepo.findCommentById(
+          parent.parent_comment_id,
+        );
+        replyRecipientId = root?.user_id ?? parent.user_id;
+      } else {
+        replyRecipientId = parent.user_id;
+      }
     }
 
     const created = await this.commentRepo.createComment(blogId, userId, {
       ...data,
       parentCommentId: parentCommentId ?? undefined,
     });
+    if (replyRecipientId) {
+      await this.notificationService.notifyCommentReply(
+        replyRecipientId,
+        userId,
+        blogId,
+        created.id,
+      );
+    }
     return this.toSingleDTO(created);
   }
 

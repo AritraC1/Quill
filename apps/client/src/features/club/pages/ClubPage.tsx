@@ -486,7 +486,8 @@ const ClubDetail = ({ club, onBack, onLeaveRuleSaved, onUpdate }: {
   const [rules, setRules] = useState(club.rules.join("\n"));
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [savingDetails, setSavingDetails] = useState(false);
+  const [, setSavingDetails] = useState(false);
+
 
   useEffect(() => {
     let active = true;

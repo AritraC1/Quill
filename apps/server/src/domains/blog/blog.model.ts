@@ -11,6 +11,7 @@ export interface BlogModel {
   description?: string | null; // excerpt shown on cards — pg column is blog_description
   blog_description?: string | null; // raw column name (mapper prefers `description`)
   images?: string[] | null;
+  genres?: string[];
   status: BlogStatus;
   published_at: Date | null; // set once on first publish, kept on edits
   scheduled_publish_at?: Date | null; // pending "publish later" datetime

@@ -18,3 +18,14 @@ export interface NotificationRowModel {
   // joined from clubs
   club_name?: string | null;
 }
+
+export interface WeeklyDigestRowModel {
+  recipient_id: string;
+  recipient_name: string;
+  email: string;
+  posts: Array<{
+    id: string;
+    title: string;
+    author_name: string;
+  }>;
+}

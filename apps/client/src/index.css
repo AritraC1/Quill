@@ -112,6 +112,24 @@
   margin: 1.2rem 0;
 }
 
+.prose-preview[data-theme="dark"] blockquote {
+  border-left-color: #82A88F;
+  color: #B8C2BA;
+}
+
+.prose-preview[data-theme="dark"] pre,
+.prose-preview[data-theme="dark"] :not(pre) > code {
+  background: #2A332D;
+}
+
+.prose-preview[data-theme="dark"] a {
+  color: #A8D5BA;
+}
+
+.prose-preview[data-theme="dark"] hr {
+  border-top-color: #3B463F;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .quill-stroke {
     animation: none;
@@ -129,4 +147,3 @@ button:focus-visible {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   opacity: 0.035;
 }
-

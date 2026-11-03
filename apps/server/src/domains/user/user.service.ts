@@ -199,6 +199,7 @@ class UserService {
     const row = await this.userRepo.saveSettings(userId, {
       ...data,
       genres,
+      notifications: { ...data.notifications, emailNews: false },
     });
 
     if (!row) {
@@ -222,7 +223,7 @@ class UserService {
         appReplies: row.notif_app_replies,
         emailDigest: row.notif_email_digest,
         emailFollowers: row.notif_email_followers,
-        emailNews: row.notif_email_news,
+        emailNews: false,
       },
     };
   }

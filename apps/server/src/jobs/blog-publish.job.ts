@@ -28,6 +28,11 @@ export const blogPublishWorker = new Worker<BlogPublishJobData>(
         "Scheduled blog published",
       );
 
+      await notificationService.notifyScheduledPostPublished(
+        published.user_id,
+        published.id,
+      );
+
       // The scheduled release just went live — notify the author's followers.
       // Fan-out runs on its own worker and is idempotent, so it is safe even
       // if the instant-publish path had already enqueued it.

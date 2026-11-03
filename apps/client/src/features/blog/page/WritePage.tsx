@@ -28,12 +28,15 @@ import {
   updateBlogApi,
 } from "../api/blog.api";
 import { createClubSubmissionApi, listMyClubsApi, resubmitClubSubmissionApi } from "../../club/api/club.api";
-import type { BlogResponseDTO, ClubDTO } from "@quill/shared";
+import { SETTINGS_GENRES, type BlogResponseDTO, type ClubDTO } from "@quill/shared";
 import { firstImageFromContent } from "../lib/blog-story";
 import { markdownToPlainText, wordCount } from "../lib/markdown";
 import { toLocalDateTimeInput } from "../../../lib/datetime";
 
 const AUTOSAVE_MS = 1500;
+const CLUB_COLORS = ["#1F3D2F", "#B27D56", "#5C6B4F", "#7A4E3A", "#3B5248"];
+const clubColor = (id: string) =>
+  CLUB_COLORS[[...id].reduce((total, character) => total + character.charCodeAt(0), 0) % CLUB_COLORS.length];
 
 // BullMQ (Redis) delays are 32-bit ms — the matching server-side cap
 const MAX_SCHEDULE_DAYS = 24;
@@ -71,6 +74,7 @@ export const WritePage = () => {
   const [blogId, setBlogId] = useState<string | null>(id ?? null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [genres, setGenres] = useState<string[]>([]);
   const [isLoaded, setIsLoaded] = useState(!id);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -98,7 +102,7 @@ export const WritePage = () => {
   // would make the load effect bail out immediately on mount (`blogIdRef.current
   // === id`), leaving the editor empty (a fresh page instead of the draft).
   const blogIdRef = useRef<string | null>(null);
-  const draftValuesRef = useRef({ title, content });
+  const draftValuesRef = useRef({ title, content, genres });
   const isDirtyRef = useRef(false);
 
   // Load user's clubs when creating a new blog (no id param)
@@ -122,8 +126,8 @@ export const WritePage = () => {
   }, [id]);
 
   useEffect(() => {
-    draftValuesRef.current = { title, content };
-  }, [title, content]);
+    draftValuesRef.current = { title, content, genres };
+  }, [title, content, genres]);
 
   const setBlogIdState = (next: string) => {
     blogIdRef.current = next;
@@ -149,6 +153,7 @@ export const WritePage = () => {
         setBlogIdState(loaded.id);
         setTitle(loaded.title);
         setContent(loaded.content);
+        setGenres(loaded.genres ?? []);
         // If this is a club blog, find and select the club
         if (loaded.clubId && userClubs.length > 0) {
           const club = userClubs.find((c) => c.id === loaded.clubId);
@@ -172,6 +177,7 @@ export const WritePage = () => {
     async (valuesOverride?: {
       title: string;
       content: string;
+      genres: string[];
     }): Promise<string | null> => {
       // Chain onto any in-flight save instead of racing it
       const previous = saveInFlightRef.current;
@@ -180,9 +186,16 @@ export const WritePage = () => {
         const values = valuesOverride ?? draftValuesRef.current;
         // Carry the first embedded image (if any) so it shows on story cards.
         const images = firstImageFromContent(values.content);
-        const payload: { title: string; content: string; description?: string; images?: string[] } = {
+        const payload: {
+          title: string;
+          content: string;
+          description?: string;
+          images?: string[];
+          genres: string[];
+        } = {
           title: values.title,
           content: values.content,
+          genres: values.genres,
         };
         if (images) payload.images = [images];
         setIsSaving(true);
@@ -230,7 +243,7 @@ export const WritePage = () => {
       void saveDraft();
     }, AUTOSAVE_MS);
     return () => clearTimeout(timer);
-  }, [content, title, isLoaded, dirty, saveDraft]);
+  },   [content, title, genres, isLoaded, dirty, saveDraft]);
 
   const edit = (nextContent: string) => {
     setContent(nextContent);
@@ -240,6 +253,18 @@ export const WritePage = () => {
 
   const editTitle = (nextTitle: string) => {
     setTitle(nextTitle);
+    isDirtyRef.current = true;
+    setDirty(true);
+  };
+
+  const toggleGenre = (genre: string) => {
+    setGenres((current) =>
+      current.includes(genre)
+        ? current.filter((value) => value !== genre)
+        : current.length < 5
+          ? [...current, genre]
+          : current,
+    );
     isDirtyRef.current = true;
     setDirty(true);
   };
@@ -255,6 +280,7 @@ export const WritePage = () => {
     const savedId = await saveDraft({
       title: draftValuesRef.current.title,
       content: draftValuesRef.current.content,
+      genres: draftValuesRef.current.genres,
     });
     if (!savedId) {
       setIsPublishing(false);
@@ -333,6 +359,7 @@ export const WritePage = () => {
     const savedId = await saveDraft({
       title: draftValuesRef.current.title,
       content: draftValuesRef.current.content,
+      genres: draftValuesRef.current.genres,
     });
     if (!savedId) {
       setIsPublishing(false);
@@ -498,7 +525,7 @@ export const WritePage = () => {
                 <div className="flex items-center gap-2">
                   <div
                     className="w-7 h-7 rounded-full font-editorial text-white flex items-center justify-center text-[11px] select-none"
-                    style={{ background: club.color }}
+                    style={{ background: clubColor(club.id) }}
                   >
                     {club.name[0]}
                   </div>
@@ -516,13 +543,45 @@ export const WritePage = () => {
         </Section>
       )}
 
+      <Section title="Topics">
+        <p className="mb-3 text-[12px] leading-5 text-[#8A8F8B]">
+          Choose up to five topics. They help readers find this story and shape
+          their For you feed.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {SETTINGS_GENRES.map((genre) => {
+            const selected = genres.includes(genre);
+            return (
+              <button
+                key={genre}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleGenre(genre)}
+                className={`rounded-full px-3 py-1.5 text-[12px] transition-colors ${
+                  selected
+                    ? "bg-[#1F3D2F] text-white"
+                    : "bg-[#EAE6DD] text-[#1B1F1C] hover:bg-[#DFDBD2]"
+                }`}
+              >
+                {genre}
+              </button>
+            );
+          })}
+        </div>
+        {genres.length === 5 && (
+          <p className="mt-2 text-[11px] text-[#8A8F8B]">
+            Maximum of five topics selected.
+          </p>
+        )}
+      </Section>
+
       {/* Club info — for existing club blogs */}
       {id && selectedClub && (
         <Section title="Club">
           <div className="flex items-center gap-3">
             <div
               className="w-8 h-8 rounded-full font-editorial text-white flex items-center justify-center text-[12px] select-none"
-              style={{ background: selectedClub.color }}
+              style={{ background: clubColor(selectedClub.id) }}
             >
               {selectedClub.name[0]}
             </div>
@@ -793,7 +852,7 @@ export const WritePage = () => {
                   >
                     <span
                       className="w-5 h-5 rounded-full font-editorial text-white flex items-center justify-center text-[10px] select-none"
-                      style={{ background: selectedClub.color }}
+                      style={{ background: clubColor(selectedClub.id) }}
                     >
                       {selectedClub.name[0]}
                     </span>

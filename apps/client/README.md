@@ -73,9 +73,9 @@ src/
 
 The API sets `quill_access_token` and `quill_refresh_token` as httpOnly cookies; client JavaScript never reads the token values. Requests include credentials. `useAuth()` restores the session through `/auth/session`; `fetchWithAuth()` performs a single-flight refresh and retries once after a 401. Logout supports this device or all sessions.
 
-The client uses API-backed profiles, posts, bookmarks, follows, follower lists, suggestions, notifications, settings, and account deletion. Feed search/topic filtering is client-side over loaded feed data. If a feed request fails, local mock stories can serve as a fallback; profile and blog operations otherwise depend on the API.
+The client uses API-backed profiles, posts, bookmarks, follows, follower lists, suggestions, notifications, settings, and account deletion. The For You feed uses saved genres to filter tagged posts while retaining untagged legacy posts; topic chips filter pages currently loaded in the client. Story search queries the server across published posts using substring matching (not ranked full-text or semantic search). If a feed request fails, profile and blog operations otherwise depend on the API.
 
-The settings page persists its complete preference snapshot, but the client does not yet apply most saved feed, reader appearance, or notification preferences elsewhere. The status route is only a placeholder.
+Saved default tab, reader text size and theme, and in-app notification switches are applied. The worker sends opted-in follower emails and weekly digests (Mondays at 09:00 UTC). Product-news email is disabled until a newsletter source exists. The status route is only a placeholder.
 
 > **Development limitation:** the server currently issues and accepts the fixed OTP `0000`. Do not deploy this auth flow publicly until the test behavior is removed.
 

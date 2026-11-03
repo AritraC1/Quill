@@ -32,6 +32,7 @@ export function toBlogResponse(blog: BlogWithAuthorModel): BlogResponseDTO {
     // description but SELECT * rows keep the raw column
     description: blog.description ?? blog.blog_description ?? "",
     images: blog.images ?? undefined,
+    genres: blog.genres ?? [],
     status: blog.status as BlogStatus,
     publishedAt: blog.published_at
       ? new Date(blog.published_at).toISOString()
@@ -276,9 +277,10 @@ class BlogService {
 
   // The feed: every published blog, newest first, with the viewer's bookmarks.
   // Optional `author` handle narrows it to one writer (used by profile pages).
+  // Optional `search` performs a full-text search on title, content, description.
   async listFeed(
     userId: string,
-    query: BlogListQueryDTO & { author?: string },
+    query: BlogListQueryDTO & { author?: string; search?: string },
   ): Promise<{ items: BlogResponseDTO[]; total: number }> {
     const { page, limit } = parsePageLimit(query);
 
@@ -295,11 +297,18 @@ class BlogService {
       authorId = author.id;
     }
 
+    const searchQuery = query.search?.trim();
+    const preferredGenres =
+      !query.author && !searchQuery
+        ? (await this.userRepo.getSettings(userId))?.fav_genre ?? []
+        : [];
     const result = await this.blogRepo.listPublishedBlogs(
       userId,
       authorId,
       page,
       limit,
+      searchQuery,
+      preferredGenres,
     );
     return {
       items: result.items.map(toBlogResponse),

@@ -40,7 +40,7 @@ class BlogController {
     }
   };
 
-  // Feed of published blogs — GET /blogs?page&limit
+  // Feed of published blogs — GET /blogs?page&limit&author&search
   listFeed = async (
     req: Request,
     res: Response,
@@ -48,11 +48,13 @@ class BlogController {
   ): Promise<void> => {
     try {
       const userId = req.user?.userId;
-      const query: BlogListQueryDTO & { author?: string } = {
+      const query: BlogListQueryDTO & { author?: string; search?: string } = {
         page: Number(req.query.page) || undefined,
         limit: Number(req.query.limit) || undefined,
         author:
           typeof req.query.author === "string" ? req.query.author : undefined,
+        search:
+          typeof req.query.search === "string" ? req.query.search : undefined,
       };
       const result = await this.blogService.listFeed(userId, query);
 

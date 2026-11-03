@@ -43,11 +43,12 @@ quill/
 - Email OTP signup/login with httpOnly access and rotating refresh cookies; logout can revoke the current device or all sessions.
 - Onboarding, editable profile and handle, multipart avatar uploads, visitor profiles, follow/follower lists, and follow suggestions.
 - Markdown post drafts, editing, immediate or scheduled publishing, paginated For You and Following feeds, and persistent bookmarks.
-- In-app notifications for new followers and posts from followed writers.
-- Settings API for favorite topics, feed-tab preference, reading appearance, and notification preferences; settings are stored, though most preferences are not yet applied elsewhere in the client or notification delivery.
+- Topic-tagged posts and a For You feed shaped by saved genres; untagged legacy posts remain available as fallback.
+- In-app alerts for follows, followed writers' posts, scheduled publications, comment replies, and club events; optional follower emails and a weekly reading digest are delivered by the worker.
+- Saved feed-tab, topic, reader text-size/theme, and notification preferences are applied. Product-news email remains unavailable until a newsletter source exists.
 - Self-service account deletion with dependent data removed through database cascades.
 
-The client uses the server for these core features. Search and topic filtering are client-side over the currently loaded feed, and selected local-storage values still support UI state/cache behavior. See the [PRD](docs/PRD.md) and [API reference](docs/API.md) for precise behavior and limitations.
+The client uses the server for core features. Story search runs server-side across published posts using case-insensitive substring matching; topic chips on the feed filter the pages currently loaded in the client. This is not ranked PostgreSQL full-text or semantic search. See the [PRD](docs/PRD.md) and [API reference](docs/API.md) for precise behavior and limitations.
 
 ## Future work
 
@@ -62,11 +63,15 @@ Ideas for future product development; these are not currently implemented:
 7. Version history
 8. Live Blog Writing Competition (On-the-Spot Topic) 
 9. Content Moderation
-10. Add Prometheus and Grafana
+10. Add Prometheus and Grafana for observation
 11. Full text search
 12. Series / Collection of Blogs (grouping)
 13. Upgrade rich text editor (TipTap / ProseMirror)
 14. Report and Block users
+15. Semantic search over Full text search
+16. AI writing assistant
+17. AI analytics dashboard and report generation
+18. Implement OAuth
 
 ## Getting started
 
@@ -81,8 +86,6 @@ bun install
 bun run migrate
 ```
 
-In separate terminals, run `bun run dev` for the client and API and `bun run dev:worker` for background jobs. The client is served by Vite (default `http://localhost:5173`) and the API by Express (`http://localhost:3000`). The worker is required for OTP email, scheduled publishing, and notification fan-out. If you use Docker Compose, PostgreSQL applies the migration SQL files when it initializes a new data volume; existing volumes do not automatically rerun those init scripts.
-
 ### Docker Compose
 
 ```bash
@@ -95,7 +98,7 @@ docker compose up --build
 |---|---|---|
 | `client` | `http://localhost:80` | Nginx SPA and reverse proxy |
 | `server` | Internal port 3000 | Express API, Swagger UI and uploaded assets |
-| `worker` | Internal only | OTP email, scheduled publishing, notification fan-out |
+| `worker` | Internal only | OTP/follower/digest email, scheduled publishing, notification fan-out |
 | `postgres` | `localhost:5432` | Persistent application data |
 | `redis` | Internal only | BullMQ queue backend |
 
@@ -116,6 +119,11 @@ bun run test:client
 ```
 
 `bun run dev` starts workspaces with a `dev` script (client and API); it does not start the worker.
+
+**To Run this Project:**
+***Option 1:*** In separate terminals, run `bun run dev` for the client and API and `bun run dev:worker` for background jobs. The client is served by Vite (default `http://localhost:5173`) and the API by Express (`http://localhost:3000`). The worker is required for OTP and follower email, weekly digests, scheduled publishing, and notification fan-out. If you use Docker Compose, PostgreSQL applies the migration SQL files when it initializes a new data volume; existing volumes do not automatically rerun those init scripts.
+
+***Option 2:*** In same terminal run via this script - `./scripts/run.sh`. This will start everything.
 
 See the [documentation index](docs/README.md), [API reference](docs/API.md), [architecture](docs/Architecture.md), [system design](docs/System-Design.md), and [change log](CHANGE-LOG.md).
 

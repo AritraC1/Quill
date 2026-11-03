@@ -10,6 +10,7 @@ import {
   recordReadingSessionApi,
 } from "../api/blog.api";
 import CommentSection from "../components/CommentSection";
+import { BlogTtsPlayer } from "../components/BlogTtsPlayer";
 import type { BlogResponseDTO } from "@quill/shared";
 import {
   markdownToHtml,
@@ -17,6 +18,7 @@ import {
   wordCount,
   readTimeMinutes,
 } from "../lib/markdown";
+import { useSettings } from "../../settings/hooks/useSettings";
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", {
@@ -28,11 +30,12 @@ const formatDate = (iso: string) =>
 export const BlogPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { textSize, theme } = useSettings();
 
   const [blog, setBlog] = useState<BlogResponseDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const articleRef = useRef<HTMLElement | null>(null);
+  const articleRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -284,9 +287,21 @@ export const BlogPage = () => {
             </div>
           </div>
 
+          {/* Audio TTS Player */}
+          <BlogTtsPlayer blog={blog} />
+
           {/* Rendered markdown content */}
           <div
-            className="prose-preview mt-8 text-[17px] leading-8 text-[#1B1F1C]"
+            ref={articleRef}
+            data-theme={theme}
+            className={`prose-preview mt-8 rounded-xl px-1 leading-8 ${
+              theme === "sepia"
+                ? "bg-[#F4EFE3] text-[#3B3224]"
+                : theme === "dark"
+                  ? "bg-[#1B211D] text-[#E6E2D8]"
+                  : "bg-white text-[#1B1F1C]"
+            }`}
+            style={{ fontSize: `${textSize}px` }}
             dangerouslySetInnerHTML={{ __html: markdownToHtml(blog.content) }}
           />
         </article>

@@ -5,12 +5,23 @@ import type {
 } from "@quill/shared";
 import NotificationRepository from "./notification.repository";
 import type { NotificationRowModel } from "./notification.model";
-import { notificationFanoutQueue } from "../../jobs/queue";
+import { emailQueue, notificationFanoutQueue } from "../../jobs/queue";
 import { NotFoundError } from "../../core/errors";
 import { logger } from "../../core/logger/logger";
+import UserRepository from "../user/user.repository";
 
 // Pagination guard rails (same limits the blog list uses)
 const MAX_LIMIT = 50;
+
+type NotificationPreferences = {
+  appPosts: boolean;
+  appFollowers: boolean;
+  appScheduled: boolean;
+  appReplies: boolean;
+  emailDigest: boolean;
+  emailFollowers: boolean;
+  emailNews: boolean;
+};
 
 /** Deterministic event keys — the unique index on event_key makes
  * (re)creating an event a no-op, so retries never duplicate notifications */
@@ -25,13 +36,17 @@ export const eventKeys = {
     `club-invite:${clubId}:${inviteeId}`,
   // One per club_reviews row: every review cycle notifies afresh, retries no-op
   clubReview: (reviewId: string) => `club-review:${reviewId}`,
+  scheduledPublish: (blogId: string) => `scheduled-publish:${blogId}`,
+  commentReply: (commentId: string) => `comment-reply:${commentId}`,
 };
 
 class NotificationService {
   private notificationRepo: NotificationRepository;
+  private userRepo: UserRepository;
 
   constructor() {
     this.notificationRepo = new NotificationRepository();
+    this.userRepo = new UserRepository();
   }
 
   // Row -> serialized DTO (dates become ISO strings, joins become objects)
@@ -102,26 +117,112 @@ class NotificationService {
   // Fired ONLY after the follow row is actually inserted (a repeat follow
   // must not ping the writer again). Best-effort: a failed insert must not
   // turn the already-successful follow into an error response.
+  // App and email delivery are independent preferences.
   async notifyNewFollower(followerId: string, targetId: string): Promise<void> {
+    let preferences: NotificationPreferences | undefined;
     try {
+      const settings = await this.userRepo.getNotificationSettings([targetId]);
+      preferences = settings.get(targetId);
+    } catch (error) {
+      logger.warn({ error, followerId, targetId }, "Could not load follower notification preferences");
+      return;
+    }
+
+    if (preferences?.appFollowers !== false) {
+      try {
+        await this.notificationRepo.create({
+          recipientId: targetId,
+          actorId: followerId,
+          type: "new_follower",
+          eventKey: eventKeys.follow(followerId, targetId),
+        });
+      } catch (error) {
+        logger.warn({ error, followerId, targetId }, "Follow notification failed");
+      }
+    }
+
+    if (preferences?.emailFollowers === true) {
+      try {
+        const [recipient, follower] = await Promise.all([
+          this.userRepo.findById(targetId),
+          this.userRepo.findById(followerId),
+        ]);
+        if (recipient?.email && follower) {
+          await emailQueue.add(
+            "new-follower",
+            {
+              type: "new-follower",
+              recipientId: targetId,
+              followerName: follower.name,
+            },
+            {
+              jobId: `follower-email-${followerId}-${targetId}-${Date.now()}`,
+              attempts: 3,
+              backoff: { type: "exponential", delay: 5_000 },
+              removeOnComplete: { age: 60 * 60 * 24 * 30 },
+              removeOnFail: { age: 60 * 60 * 24 * 30 },
+            },
+          );
+        }
+      } catch (error) {
+        logger.warn({ error, followerId, targetId }, "Could not enqueue follower email");
+      }
+    }
+  }
+
+  async notifyScheduledPostPublished(
+    authorId: string,
+    blogId: string,
+  ): Promise<void> {
+    try {
+      const settings = await this.userRepo.getNotificationSettings([authorId]);
+      if (settings.get(authorId)?.appScheduled === false) return;
       await this.notificationRepo.create({
-        recipientId: targetId,
-        actorId: followerId,
-        type: "new_follower",
-        eventKey: eventKeys.follow(followerId, targetId),
+        recipientId: authorId,
+        actorId: authorId,
+        blogId,
+        type: "scheduled_post_published",
+        eventKey: eventKeys.scheduledPublish(blogId),
       });
     } catch (error) {
-      logger.warn({ error, followerId, targetId }, "Follow notification failed");
+      logger.warn({ error, authorId, blogId }, "Scheduled publish notification failed");
+    }
+  }
+
+  async notifyCommentReply(
+    recipientId: string,
+    actorId: string,
+    blogId: string,
+    commentId: string,
+  ): Promise<void> {
+    if (recipientId === actorId) return;
+    try {
+      const settings = await this.userRepo.getNotificationSettings([recipientId]);
+      if (settings.get(recipientId)?.appReplies === false) return;
+      await this.notificationRepo.create({
+        recipientId,
+        actorId,
+        blogId,
+        type: "comment_reply",
+        eventKey: eventKeys.commentReply(commentId),
+      });
+    } catch (error) {
+      logger.warn({ error, recipientId, blogId, commentId }, "Comment reply notification failed");
     }
   }
 
   // Fired ONLY after a club invitation was actually created. Best-effort.
+  // Respects the invitee's `notif_app_followers` preference (social interactions).
   async notifyClubInvitation(
     inviteeId: string,
     inviterId: string,
     clubId: string,
   ): Promise<void> {
     try {
+      const settings = await this.userRepo.getNotificationSettings([inviteeId]);
+      if (settings.get(inviteeId)?.appFollowers === false) {
+        return; // User disabled follower/social notifications
+      }
       await this.notificationRepo.create({
         recipientId: inviteeId,
         actorId: inviterId,
@@ -137,6 +238,7 @@ class NotificationService {
   // Fired ONLY after a review row was written. The event key is the review's
   // row id, so every review cycle (approve / request changes / reject)
   // notifies the author once — worker retries no-op on the unique index.
+  // Respects the author's `notif_app_replies` preference (review feedback).
   async notifyClubReview(
     authorId: string,
     reviewerId: string | null,
@@ -145,6 +247,10 @@ class NotificationService {
     clubId: string,
   ): Promise<void> {
     try {
+      const settings = await this.userRepo.getNotificationSettings([authorId]);
+      if (settings.get(authorId)?.appReplies === false) {
+        return; // User disabled reply/mention notifications
+      }
       await this.notificationRepo.create({
         recipientId: authorId,
         actorId: reviewerId ?? authorId,

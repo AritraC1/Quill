@@ -13,6 +13,7 @@ import {
   listFollowingFeedApi,
   bookmarkBlogApi,
   deleteBlogApi,
+  searchBlogsApi,
 } from "../../blog/api/blog.api";
 import {
   setFollowApi,
@@ -22,6 +23,7 @@ import {
 import type { BlogResponseDTO } from "@quill/shared";
 import type { Story } from "../../profile/types/story.types";
 import { blogToStory, isServerBlogId } from "../../blog/lib/blog-story";
+import { useSettings } from "../../settings/hooks/useSettings";
 
 const PAGE_SIZE = 5;
 // Server-side feed page size
@@ -46,7 +48,9 @@ type Tab = (typeof TABS)[number]["id"];
 
 const FeedPage = () => {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("for-you");
+  const { defaultTab, isLoading: isSettingsLoading } = useSettings();
+  const [tab, setTab] = useState<Tab>(() => defaultTab);
+  const userSelectedTab = useRef(false);
   const [topic, setTopic] = useState("All");
   // Live filter state — seeded from `?q=` so a search submitted from another
   // page's navbar ("Enter" jumps to /feed?q=…) opens pre-filtered
@@ -57,6 +61,12 @@ const FeedPage = () => {
   const [toast, setToast] = useState<string | null>(null);
 
   const own = useOwnProfile();
+
+  useEffect(() => {
+    if (!isSettingsLoading && !userSelectedTab.current) {
+      setTab(defaultTab);
+    }
+  }, [defaultTab, isSettingsLoading]);
 
   // Server feed state for "For you" tab
   const [feedBlogs, setFeedBlogs] = useState<BlogResponseDTO[]>([]);
@@ -69,6 +79,13 @@ const FeedPage = () => {
   const [followingPage, setFollowingPage] = useState(1);
   const [followingTotal, setFollowingTotal] = useState<number | null>(null);
   const [followingServerDown, setFollowingServerDown] = useState(false);
+
+  // Search state
+  const [searchResults, setSearchResults] = useState<BlogResponseDTO[]>([]);
+  const [searchTotal, setSearchTotal] = useState<number | null>(null);
+  const [, setIsSearching] = useState(false);
+
+  const [searchPage, setSearchPage] = useState(1);
 
   // Suggestions state
   const [suggestions, setSuggestions] = useState<
@@ -186,6 +203,51 @@ const FeedPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Server-side search when query changes
+  const fetchSearchResults = useCallback(
+    async (
+      query: string,
+      pageNum: number,
+    ): Promise<{ items: BlogResponseDTO[]; total: number } | null> => {
+      if (!query.trim()) return null;
+      try {
+        const res = await searchBlogsApi(query.trim(), pageNum, FEED_PAGE_SIZE);
+        return res;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchTotal(null);
+      setSearchPage(1);
+      setIsSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearching(true);
+    fetchSearchResults(searchQuery, 1).then((res) => {
+      if (cancelled) return;
+      setIsSearching(false);
+      if (res) {
+        setSearchResults(res.items);
+        setSearchTotal(res.total);
+        setSearchPage(1);
+      } else {
+        setSearchResults([]);
+        setSearchTotal(0);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuery, fetchSearchResults]);
+
   // Append the next server page for "For you"
   const loadMoreServer = useCallback(async () => {
     if (serverDown || feedTotal === null) return;
@@ -245,7 +307,15 @@ const FeedPage = () => {
   const ownHandle = own.profile.handle ?? "";
 
   const visible = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = searchQuery.trim();
+
+    // Use server search results when there's a search query
+    if (q) {
+      const results = searchResults.map((b) => blogToStory(b, ownHandle));
+      return topic === "All"
+        ? results
+        : results.filter((story) => story.genres?.includes(topic));
+    }
 
     // Select the right feed based on tab
     const currentFeedBlogs = tab === "following" ? followingBlogs : feedBlogs;
@@ -255,19 +325,15 @@ const FeedPage = () => {
       blogToStory(b, ownHandle),
     );
 
-    if (topic !== "All") list = list.filter((s) => s.topic === topic);
-
-    if (q) {
-      list = list.filter((s) =>
-        `${s.title} ${s.excerpt} ${s.author.name} ${s.author.handle ?? ""} ${s.topic} ${s.content ?? ""}`
-          .toLowerCase()
-          .includes(q),
-      );
+    if (topic !== "All") {
+      list = list.filter((story) => story.genres?.includes(topic));
     }
+
     return list;
   }, [
     feedBlogs,
     followingBlogs,
+    searchResults,
     ownHandle,
     tab,
     topic,
@@ -277,11 +343,33 @@ const FeedPage = () => {
   const page = visible.slice(0, shown);
 
   // More server pages exist
-  const currentTotal = tab === "following" ? followingTotal : feedTotal;
+  const currentTotal = searchQuery.trim()
+    ? searchTotal
+    : tab === "following"
+    ? followingTotal
+    : feedTotal;
+  const currentPage = searchQuery.trim()
+    ? searchPage
+    : tab === "following"
+    ? followingPage
+    : feedPage;
   const hasMore = currentTotal
-    ? (tab === "following" ? followingPage : feedPage) * FEED_PAGE_SIZE <
-      currentTotal
+    ? currentPage * FEED_PAGE_SIZE < currentTotal
     : false;
+
+  // Load more for search
+  const loadMoreSearch = useCallback(async () => {
+    if (!searchQuery.trim() || searchTotal === null) return;
+    const nextPage = searchPage + 1;
+    if (searchPage * FEED_PAGE_SIZE >= searchTotal) return;
+
+    const res = await fetchSearchResults(searchQuery, nextPage);
+    if (res) {
+      setSearchResults((prev) => [...prev, ...res.items]);
+      setSearchTotal(res.total);
+      setSearchPage(nextPage);
+    }
+  }, [searchQuery, searchPage, searchTotal, fetchSearchResults]);
 
   // Infinite scroll
   useEffect(() => {
@@ -291,7 +379,14 @@ const FeedPage = () => {
       ([entry]) => {
         if (!entry?.isIntersecting) return;
         setIsLoadingMore(true);
-        if (tab === "following") {
+        if (searchQuery.trim()) {
+          loadMoreSearch().finally(() => {
+            loadTimer.current = setTimeout(
+              () => setIsLoadingMore(false),
+              500,
+            );
+          });
+        } else if (tab === "following") {
           loadMoreFollowingServer().finally(() => {
             loadTimer.current = setTimeout(
               () => setIsLoadingMore(false),
@@ -316,10 +411,13 @@ const FeedPage = () => {
     isLoadingMore,
     loadMoreServer,
     loadMoreFollowingServer,
+    loadMoreSearch,
     tab,
+    searchQuery,
   ]);
 
   const changeTab = (t: Tab) => {
+    userSelectedTab.current = true;
     setTab(t);
     setShown(PAGE_SIZE);
   };

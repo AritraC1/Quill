@@ -335,9 +335,13 @@ in `user_settings`. The write is transactional.
 
 Allowed `defaultTab`: `for-you` or `following`; `textSize`: integer 15–24;
 `theme`: `light`, `sepia`, or `dark`; at most 20 non-empty genres. All seven
-notification switches are booleans. These settings are persisted, but the
-client currently does not apply most of them to feed selection, reader styling,
-or notification/email delivery.
+notification switches are booleans. Saved genres filter tagged posts in the
+For You feed; untagged legacy posts remain visible as fallback. The selected
+default tab is applied after settings load, and text size/theme apply to story
+bodies. In-app switches gate their event types. `emailFollowers` sends a
+follower email, and `emailDigest` sends up to five recent posts from followed
+writers on Mondays at 09:00 UTC when the worker is running. `emailNews` is
+always returned and stored as `false` until Quill has a product-news source.
 
 ### `DELETE /user/account` — authenticated
 
@@ -367,7 +371,7 @@ source; `blog_description` is an optional excerpt.
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/blogs` | Create a blog — **always saved as a draft** |
-| GET | `/blogs?page&limit` | Feed: every published blog, newest first, with the viewer's `isBookmarked` flag. Optional `?author=<handle>` narrows to one writer's published blogs (visitor profiles) |
+| GET | `/blogs?page&limit` | For You feed: published blogs with the viewer's `isBookmarked` flag. Saved genres filter tagged posts; untagged legacy posts remain as fallback. Optional `?author=<handle>` narrows to one writer and skips preference filtering; `?search=<text>` searches published titles, descriptions, and bodies |
 | GET | `/blogs/following?page&limit` | Published blogs by writers the signed-in user follows, newest first |
 | GET | `/blogs/count` | Writer statistics: `{ published, drafts, total }` |
 | GET | `/blogs/drafts?page&limit` | The signed-in writer's drafts only |
@@ -392,14 +396,20 @@ viewer's saved state on feed/detail/saved responses.
   "title": "A Quiet Manifesto",
   "content": "# A Quiet Manifesto\n\nSome **bold** thoughts.",
   "description": "optional excerpt",
-  "images": ["https://..."]
+  "images": ["https://..."],
+  "genres": ["Essays", "Culture"]
 }
 ```
 
-Current request validation accepts `title`, `content`, and `description`.
+`genres` is optional and accepts up to five values from the supported topic
+list. Current request validation accepts `title`, `content`, `description`,
+and `genres`.
 Although the database and shared DTO include `images`, the active Zod schema
 does not currently accept that field (unknown body keys are stripped), so blog
 image persistence is not available through these routes yet.
+
+The `search` query uses case-insensitive substring matching, not PostgreSQL
+ranked full-text search. Search results do not use saved-genre filtering.
 
 **Single blog response** (dates serialized as ISO strings):
 
@@ -408,7 +418,7 @@ image persistence is not available through these routes yet.
   "success": true,
   "data": {
     "id": "uuid", "userId": "uuid", "title": "...", "content": "...",
-    "description": "", "images": null, "status": "published",
+    "description": "", "images": null, "genres": ["Essays"], "status": "published",
     "publishedAt": "2026-10-28T15:38:34.508Z",
     "scheduledPublishAt": null,
     "createdAt": "...", "updatedAt": "...",
@@ -499,10 +509,11 @@ In-app notifications for the navbar bell. There are exactly two events:
 ### `GET /notifications` — authenticated
 
 One page of the signed-in user's notifications, newest first. Query: `page`
-(default 1), `limit` (default 20, max 50). Each item carries `id`, `type`
-(`new_post` / `new_follower`), `actor` (`id`, `name`, `handle`, `avatar`),
-`blog` (`id`, `title`, only for `new_post`), `createdAt` and `readAt` (null
-while unread).
+(default 1), `limit` (default 20, max 50). Types include `new_post`,
+`new_follower`, `scheduled_post_published`, `comment_reply`, and club events.
+Each item carries `id`, `type`, `actor` (`id`, `name`, `handle`, `avatar`),
+optional `blog` and `club` context, `createdAt`, and `readAt` (null while
+unread).
 
 ```json
 {
@@ -540,22 +551,29 @@ of the signed-in user.
 
 ### Notification lifecycle
 
-- Follow: created right after the follow row is actually inserted — a repeat
-  follow is a no-op and pings nobody.
+- Follow: the app alert and optional follower email are queued after a new
+  follow row is inserted; a repeat follow is a no-op.
 - Publish: fan-out is enqueued on the BullMQ queue `notification-fanout`
   (`jobId: fanout:<blogId>`) in the instant-publish path and by the
   scheduled-publish worker (`blog-publish`) the moment a blog actually flips
   draft → published. The worker inserts one notification per follower in
   batches of 500 (keyset pagination over `user_follows`).
+- Scheduled publish: the author receives an in-app alert if `appScheduled` is
+  enabled. Comment replies and club review feedback use `appReplies`.
+- Email: opted-in new-follower messages are sent through the `email` worker.
+  A repeat job runs Mondays at 09:00 UTC and queues a digest containing up to
+  five posts published in the preceding seven days by followed writers.
+  Email jobs recheck current preferences before sending. Product-news email
+  is disabled until a newsletter source exists.
 - Idempotency: every notification carries a deterministic `event_key`
   (`follow:<follower>:<target>`, `publish:<blogId>:<recipient>`) enforced
   `UNIQUE` in Postgres, so job retries and re-enqueues never duplicate.
 - Deletion: `actor_id`, `recipient_id`, and `blog_id` all reference with
-  `ON DELETE CASCADE`; de-deleting a user or blog removes its notifications.
+  `ON DELETE CASCADE`; deleting a user or blog removes its notifications.
   Schema: `migrations/011_create_notifications.sql`. The client polls
   `/notifications/unread-count` every 30 s (live streaming via SSE/WebSockets
-  is a future upgrade). The user settings notification switches are stored but
-  do not currently filter in-app events or trigger email notifications.
+  is a future upgrade). Notification preferences are checked at the event or
+  email-delivery boundary.
 
 ## 6. System and documentation routes
 
@@ -598,6 +616,8 @@ The email worker sends OTP email through Resend.
 | `user_settings` | Default feed tab, text size, theme, notification switches; genres remain in `users.fav_genre` | `012_user_settings.sql` |
 | `comments` | `blog_id` + `user_id` (cascade), self-referencing `parent_comment_id` (tree), `body`, soft-delete `deleted_at`; blog/parent/reader indexes | `013_create_comments.sql` |
 | `comment_reactions` | `comment_id` + `user_id` + `reaction_type` (`like`/`heart`) unique triple, `created_at`; per-comment count index | `013_create_comments.sql` |
+| `blogs.genres` | Up to five post topic tags; GIN index supports saved-topic filtering | `017_post_genres_and_notification_events.sql` |
+| `notifications.type` | Scheduled-publication and comment-reply event types | `017_post_genres_and_notification_events.sql` |
 
 Migrations are plain, idempotent SQL files in `src/core/database/migrations/`,
 applied in filename order by the runner (`bun run migrate`,
@@ -652,7 +672,7 @@ applied in filename order by the runner (`bun run migrate`,
 The client write editor (`/write`, `/write/:id`) autosaves as a draft and
 publishes immediately or schedules through the API. Feed and profile pages
 render server blogs; feed requests are paginated (20 per server page). The For
-You and Following feeds are separate endpoints. Search/topic filtering is
-client-side over loaded posts; fallback stories can appear if a feed API request
-fails. Settings persist, but most are not yet applied elsewhere in the client or
-notification delivery.
+You and Following feeds are separate endpoints. Story search is server-side
+substring matching; feed topic chips filter the pages currently loaded in the
+client. Saved-topic filtering runs server-side for For You. Reader and supported
+notification preferences are applied.

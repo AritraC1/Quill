@@ -11,6 +11,7 @@ export interface Story {
   content?: string; // full post body, used for search
   author: StoryAuthor;
   topic: string;
+  genres?: string[];
   readTime: string;
   publishedDate: string;
   imageUrl?: string;

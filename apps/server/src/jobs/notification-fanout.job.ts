@@ -24,6 +24,7 @@ const notificationRepo = new NotificationRepository();
 // construction: the unique event_key (`publish:<blogId>:<recipientId>`)
 // makes every batch insert a no-op for recipients already notified, so job
 // retries and duplicate jobs never create duplicates.
+// Respects each follower's `notif_app_posts` preference.
 async function fanOutNewPost(job: { data: NotificationFanoutJobData }) {
   const { blogId, authorId } = job.data;
 
@@ -47,11 +48,21 @@ async function fanOutNewPost(job: { data: NotificationFanoutJobData }) {
     );
     if (followerIds.length === 0) break;
 
-    notified += await notificationRepo.createNewPostBatch(
-      followerIds,
-      authorId,
-      blogId,
+    // Fetch notification preferences for this batch of followers
+    const notifSettings = await userRepo.getNotificationSettings(followerIds);
+
+    // Filter to only those who want new post notifications
+    const eligibleFollowers = followerIds.filter(
+      (id) => notifSettings.get(id)?.appPosts !== false,
     );
+
+    if (eligibleFollowers.length > 0) {
+      notified += await notificationRepo.createNewPostBatch(
+        eligibleFollowers,
+        authorId,
+        blogId,
+      );
+    }
 
     cursor = followerIds[followerIds.length - 1] ?? null;
     if (followerIds.length < FOLLOWERS_PER_BATCH) break;

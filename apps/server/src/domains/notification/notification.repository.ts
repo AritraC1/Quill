@@ -1,4 +1,7 @@
-import type { NotificationRowModel } from "./notification.model";
+import type {
+  NotificationRowModel,
+  WeeklyDigestRowModel,
+} from "./notification.model";
 import { pool } from "../../core/database/db";
 
 class NotificationRepository {
@@ -13,6 +16,8 @@ class NotificationRepository {
     type:
       | "new_follower"
       | "new_post"
+      | "scheduled_post_published"
+      | "comment_reply"
       | "club_invite"
       | "club_application"
       | "club_review";
@@ -32,6 +37,53 @@ class NotificationRepository {
       event.eventKey,
     ]);
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async listWeeklyDigestRecipients(): Promise<WeeklyDigestRowModel[]> {
+    const query = `
+      WITH ranked_posts AS (
+        SELECT
+          f.follower_id AS recipient_id,
+          b.id,
+          b.title,
+          b.published_at,
+          author.name AS author_name,
+          ROW_NUMBER() OVER (
+            PARTITION BY f.follower_id
+            ORDER BY b.published_at DESC, b.id
+          ) AS position
+        FROM user_follows f
+        JOIN blogs b ON b.user_id = f.following_id
+        JOIN users author ON author.id = b.user_id
+        WHERE b.status = 'published'
+          AND b.published_at >= NOW() - INTERVAL '7 days'
+      ),
+      recent_posts AS (
+        SELECT recipient_id,
+               json_agg(
+                 json_build_object(
+                   'id', id,
+                   'title', title,
+                   'authorName', author_name
+                 )
+                 ORDER BY published_at DESC
+               ) AS posts
+        FROM ranked_posts
+        WHERE position <= 5
+        GROUP BY recipient_id
+      )
+      SELECT u.id AS recipient_id,
+             u.name AS recipient_name,
+             u.email,
+             recent_posts.posts
+      FROM user_settings us
+      JOIN users u ON u.id = us.user_id
+      JOIN recent_posts ON recent_posts.recipient_id = u.id
+      WHERE us.notif_email_digest = TRUE
+      ORDER BY u.id;
+    `;
+    const result = await pool.query<WeeklyDigestRowModel>(query);
+    return result.rows;
   }
 
   // Idempotent bulk insert for the publish fan-out: one "new_post" per
