@@ -4,7 +4,7 @@ Small shell helpers for local development.
 
 | File | Purpose |
 |---|---|
-| [`run.sh`](./run.sh) | Starts Docker dependencies (PostgreSQL, Redis, Prometheus, Grafana), then runs `dev:server`, `dev:worker`, and `dev:client` in the background |
+| [`run.sh`](./run.sh) | Starts PostgreSQL, Redis, Prometheus, and Grafana with Compose, then runs `dev:server`, `dev:worker`, and `dev:client` locally in the background |
 | [`start-ai.sh`](./start-ai.sh) | Builds and starts the Python AI service with Docker Compose |
 
 ## Usage
@@ -16,7 +16,7 @@ chmod +x scripts/run.sh
 ./scripts/run.sh
 ```
 
-The script expects Bun, installed workspace dependencies, configured root `.env`, PostgreSQL, and Redis. It does not start or migrate the database. Start local dependencies with `docker compose up postgres redis`, then run `bun run migrate` before starting the API when required.
+The script expects Docker Compose, Bun, installed workspace dependencies, and configured root `.env`. It starts the database and Redis containers, but does not run migrations; run `bun run migrate` before starting the API when required. It does not launch the client, API, or worker as containers.
 
 For the complete stack, see the root [README](../README.md) and `docker compose up --build`.
 

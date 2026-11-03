@@ -1,6 +1,6 @@
 # Quill documentation
 
-This documentation describes the checked-in implementation and labels work that is not yet wired or production-ready.
+This documentation describes the checked-in implementation and distinguishes working features from development limitations and production work.
 
 | Document | Contents |
 |---|---|
@@ -21,4 +21,4 @@ scripts/           Local helper scripts
 docker-compose.yml Local Compose topology
 ```
 
-Start with the root [README](../README.md) for setup instructions. Compose applies SQL migration files automatically only when PostgreSQL initializes a new data volume; use `bun run migrate` for an existing database.
+Start with the root [README](../README.md) for setup instructions. Compose applies migration SQL through PostgreSQL's init mechanism only when initializing a new data volume; use `bun run migrate` for an existing database. Read the API reference and current implementation docs together: not every feature is available without authentication, and the OTP flow still uses a fixed development code.

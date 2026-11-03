@@ -19,9 +19,12 @@ Add `"@quill/shared": "workspace:*"` to a consuming workspace package's dependen
 | User/profile | `UserProfileDTO`, `PublicProfileDTO`, `EditProfileDTO`, `OnboardRequestDTO`, `AvatarUploadDTO`, `FollowResultDTO`, `FollowerDTO`, `FollowerListDTO` |
 | Settings | `UserSettingsDTO`, `UpdateUserSettingsDTO`, `SettingsNotificationsDTO`, feed/theme preference types, `SETTINGS_GENRES`, `TEXT_SIZE_RANGE` |
 | Account | `DeleteAccountResultDTO` |
-| Blog | `BlogStatus`, `CreateBlogDTO`, `UpdateBlogDTO`, `BlogAuthorDTO`, `BlogResponseDTO`, `BlogCountDTO`, `PublishBlogDTO`, `BlogBookmarkDTO` |
+| Blog and reading | `BlogStatus`, `CreateBlogDTO`, `UpdateBlogDTO`, `BlogAuthorDTO`, `BlogResponseDTO`, `BlogCountDTO`, `PublishBlogDTO`, `BlogBookmarkDTO`, `BlogListQueryDTO` |
+| Comments | `CommentDTO`, `CommentListDTO`, create/update DTOs, reaction types and summaries |
+| Clubs and chat | Club, membership, application, invitation, submission/review, conversation, message, activity, and collaborative-draft DTOs |
+| Notifications | Notification types, actors, blog/club previews, list and unread-count DTOs |
 
-These are API/data contracts, not evidence that every preference is currently applied in the UI. For persisted settings behavior and API routes, see the [API reference](../../docs/API.md).
+These are compile-time API/data contracts, not runtime validators or a generated API client. For implemented behavior and API routes, see the [API reference](../../docs/API.md).
 
 ## Source
 

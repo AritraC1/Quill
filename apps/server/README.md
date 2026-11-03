@@ -11,9 +11,11 @@ The backend is an Express 5 + TypeScript API running on Bun, with PostgreSQL for
 | Database | PostgreSQL via `pg` Pool |
 | Queues | Redis + BullMQ |
 | Authentication | `jose` JWTs, httpOnly cookies, rotating refresh tokens stored as hashes |
-| Validation | Zod on auth, onboarding, blog writes, and settings |
+| Validation | Zod on auth, onboarding, blog writes, comments, and settings |
 | Logging | Pino + pino-http |
 | Email | Resend |
+| Realtime | Socket.IO namespace `/club-chat` for club chat events and presence |
+| Observability | Prometheus metrics, health checks, and optional Sentry |
 | API UI | Swagger UI at `/docs` (endpoint annotations are incomplete) |
 
 ## Local development
@@ -49,10 +51,11 @@ The API listens on port 3000 by default. Local PostgreSQL and Redis must be avai
 src/
 ├── index.ts                    Express app, middleware, routes, shutdown
 ├── worker.ts                   BullMQ worker entry point
-├── routes/routes.ts            Mounts auth, user, blog, notification routers
+├── routes/routes.ts            Mounts auth, user, blog, comment, club,
+│                               and notification routers
 ├── core/
 │   ├── config/                 Env, cookies, database, Redis, Swagger
-│   ├── database/               PostgreSQL pool and migrations 001–012
+│   ├── database/               PostgreSQL pool and migrations 001–017
 │   ├── email/                  Resend client and OTP templates
 │   ├── errors/                 Application errors and error middleware
 │   ├── logger/                 Pino logger and request logging
@@ -60,8 +63,12 @@ src/
 ├── domains/
 │   ├── auth/                   Signup, OTP, session, refresh, onboarding
 │   ├── user/                   Profiles, follows, settings, account lifecycle
-│   ├── blog/                   Drafts, topic tags, feeds, bookmarks, scheduling
-│   └── notification/           In-app events and weekly email digests
+│   ├── blog/                   Drafts, topic tags, feeds, bookmarks, scheduling,
+│   │                           and reading-session progress
+│   ├── comment/                Threaded comments, replies, and reactions
+│   ├── club/                   Membership, applications, invitations, reviews,
+│   │                           chat, and version-checked shared drafts
+│   └── notification/           In-app events and notification preferences
 ├── jobs/                       Email, scheduled publish, and notification fan-out
 └── scripts/migrate.ts          Migration runner
 ```
@@ -74,14 +81,18 @@ All API routes are under `/api`; authenticated endpoints use the access cookie o
 |---|---|
 | Auth | `/auth/sign-up`, `/auth/request-otp`, `/auth/verify-otp`, `/auth/session`, `/auth/refresh-token`, `/auth/logout`, `/auth/onboard` |
 | User | `/user/me`, `/user/edit-profile`, `/user/avatar`, `/user/:handle`, follows/followers/suggestions, `/user/settings`, `/user/account` |
-| Blog | `/blogs`, `/blogs/following`, drafts, published posts, bookmarks, publish/schedule |
+| Blog | `/blogs` feed/search/author, `/blogs/following`, drafts, published posts, bookmarks, publish/schedule, reading progress |
+| Comments | `/blogs/:blogId/comments`, `/comments/:commentId` and reactions |
+| Clubs | `/clubs` membership, applications, invitations, submissions/reviews, conversations/messages, shared drafts |
 | Notifications | `/notifications`, unread count, read/read-all, clear |
 
 See the [complete API reference](../../docs/API.md) for request shapes and response details.
 
+Health and metrics are exposed at `/health`, `/api/health`, `/metrics`, and `/api/metrics`. Prometheus scrapes the server in Compose; Sentry is optional and configured by DSN.
+
 ## Migrations
 
-SQL migrations `001`–`017` are under `src/core/database/migrations/`. Run `bun run migrate` to apply pending files; the runner records applied filenames in a `migrations` table. Docker Compose also mounts migration SQL into PostgreSQL's initialization directory, which is processed only for a newly initialized data volume. The API does not run migrations automatically at startup.
+SQL migrations `001`–`017` are under `src/core/database/migrations/`, covering identity, posts, follows, notifications/settings, comments, clubs/chat, reading sessions, and genres/notification events. Run `bun run migrate` to apply pending files; the runner records applied filenames in a `migrations` table. Docker Compose also mounts migration SQL into PostgreSQL's initialization directory, which is processed only for a newly initialized data volume. The API does not run migrations automatically at startup.
 
 ## Security and operational limitations
 
@@ -92,5 +103,6 @@ SQL migrations `001`–`017` are under `src/core/database/migrations/`. Run `bun
 - Avatars are stored on local disk (`uploads/`), not object storage.
 - Saved genres filter tagged posts in the For You feed (untagged posts remain as fallback); saved reader appearance and in-app notification switches are applied.
 - The worker sends opted-in follower emails and a weekly digest on Mondays at 09:00 UTC. Product-news email is disabled until a newsletter source exists.
-- There is no `/health` endpoint; `/status` is a client placeholder. Swagger is mounted, but API annotations are incomplete.
-- The Compose deployment does not configure TLS, managed secrets, backup/restore, monitoring, or production alerting.
+- `/status` is a client placeholder; use the API health endpoints. Swagger is mounted, but API annotations are incomplete.
+- Compose includes Prometheus/Grafana, metrics, and optional Sentry integration, but does not configure TLS, managed secrets, backup/restore, or production alerting.
+- Club chat is the realtime Socket.IO feature; regular notification lists are loaded through HTTP and are not a general realtime notification stream.

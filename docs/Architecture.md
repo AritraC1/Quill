@@ -1,99 +1,121 @@
 # Quill — Architecture
 
-This describes the checked-in implementation, not a proposed production architecture. For request/response contracts, see [API.md](./API.md).
+This document describes the checked-in implementation as of 2026-11-03. For request and response contracts, see [API.md](./API.md); for product scope and limitations, see [PRD.md](./PRD.md).
 
 ## 1. System overview
 
-Quill is a Bun-workspace monorepo with a React single-page client, an Express API, PostgreSQL, and a separate BullMQ worker process.
+Quill is a Bun-workspace monorepo. The browser runs a React SPA; the API and BullMQ workers are separate Bun processes. PostgreSQL is the source of truth for application data, and Redis backs the job queues.
 
 ```text
 Browser
-  └── React 19 + Vite client
-       └── /api requests with httpOnly cookies
-            └── Express 5 API (Bun)
-                 ├── PostgreSQL — users, auth state, blogs, follows, bookmarks,
-                 │                notifications, and settings
-                 ├── local uploads directory — profile avatars (/uploads)
-                 └── Redis / BullMQ
-                      └── worker — OTP email, scheduled publishing,
-                                   notification fan-out
+  └── React 19 + Vite SPA
+       ├── HTTP /api requests with httpOnly cookies
+       └── Socket.IO /socket.io for club chat
+            └── Nginx (Compose)
+                 └── Express 5 API (Bun)
+                      ├── PostgreSQL — accounts, content, settings, clubs
+                      ├── local uploads directory — avatars and club images
+                      ├── Redis / BullMQ — email, scheduled publishing,
+                      │                   notification fan-out
+                      └── Socket.IO — authenticated club chat and presence
+
+BullMQ worker (separate process) ── Redis queues ── PostgreSQL / Resend
+Python FastAPI service ── /health only; not called by the TypeScript API
 ```
 
-In Compose, Nginx serves the client on port 80 and proxies `/api/`, `/docs/`, and `/uploads/` to the server. PostgreSQL is published on host port 5432; Redis, the API, and worker are internal to the Compose network. Compose is a local/self-hosting starting point and does not configure production TLS, backups, external object storage, or observability.
+In Docker Compose, Nginx serves the client on port 80 and proxies `/api/`, `/socket.io/`, `/docs/`, `/uploads/`, `/health`, and `/metrics` to the server. Compose also defines PostgreSQL, Redis, Prometheus, Grafana, and the standalone AI service. It is a local/self-hosting starting point, not a hardened production deployment.
 
 ## 2. Components
 
 ### Client (`apps/client`)
 
-React 19, TypeScript, React Router 7, Tailwind CSS 4, and Vite. Feature areas include auth/onboarding, blog editor/reader, feed, notifications, profile, and settings. Routes include `/`, `/status`, `/onboarding`, `/feed`, `/profile`, `/profile/edit`, `/write`, `/write/:id`, `/blog/:id`, `/settings`, `/u/:handle` (legacy), and `/:handle` (canonical profile route).
+React 19, TypeScript, React Router 7, Tailwind CSS 4, and Vite. Authenticated routes cover onboarding, feeds, profiles, post writing/reading, settings, and clubs. The public `/status` route is a UI placeholder, not a health probe.
 
-- Auth requests use `credentials: "include"`; JavaScript cannot read the httpOnly cookies.
-- Feed, blog, bookmark, follow, notification, profile, settings, and account lifecycle operations use API endpoints.
-- The client keeps limited UI state and profile/session cache data in local storage. The feed can show local mock stories if its API request fails; server-backed blog flows use API data.
-- Feed search/topic filtering is client-side over loaded content; there is no server search endpoint.
-- User markdown is escaped and URL schemes are restricted before rendering.
+- Auth requests include credentials. Browser tokens are httpOnly cookies and are not read by JavaScript. After a 401, the API helper attempts one single-flight session refresh and retry.
+- The client uses API-backed profiles, posts, bookmarks, follows, comments, notifications, settings, and club operations. When feed requests fail, local mock stories can be shown as a fallback; server-backed blog and profile flows otherwise require the API.
+- Search is sent to the server. It matches published title, description, or content using case-insensitive substring matching; it is not ranked full-text or semantic search. Topic chips filter feed pages already loaded by the client.
+- Saved default feed tab, reader text size/theme, and supported notification switches are applied. The published story reader includes text-to-speech and sends periodic authenticated reading-session progress.
+- User markdown is escaped and unsafe URL schemes are rejected before render.
 
 ### API (`apps/server`)
 
-`src/index.ts` configures credentialed CORS, Pino request logging, JSON parsing with a 1 MB limit, cookie parsing, static `/uploads`, Swagger UI, a general API rate limiter, mounted `/api` routers, centralized errors, and graceful shutdown.
+`src/index.ts` configures credentialed CORS, Pino request logging, JSON parsing with a 1 MB limit, cookie parsing, static `/uploads`, Swagger UI, API rate limiting, mounted `/api` routers, health/metrics endpoints, centralized error handling, and graceful shutdown. PostgreSQL access uses `pg`; SQL migrations are under `src/core/database/migrations`.
 
 Domains:
 
-- `auth`: signup, OTP, session restore, refresh rotation, logout, and onboarding.
-- `user`: own/public profiles, profile updates, avatar upload, follow graph, followers, suggestions, settings, and account deletion.
-- `blog`: drafts, published feed, Following feed, author feed, bookmarks, scheduling, and writer counts.
-- `notification`: list, unread count, read operations, and clear.
+- `auth`: signup, OTP request/verification, session restore, refresh rotation, logout, and onboarding.
+- `user`: own/public profiles, profile updates, avatar upload, follows, followers, suggestions, settings, and account deletion.
+- `blog`: drafts, publishing/scheduling, feeds/search, bookmarks, tags, and reading-session progress.
+- `comment`: threaded comments, replies, owner edit/delete, and like/heart comment reactions.
+- `club`: club membership, applications, invitations, submissions/reviews, conversations, messages, and version-checked shared drafts.
+- `notification`: in-app event creation, listing, unread counts, and read/clear operations.
 
-Write validation is implemented for auth, onboarding, blog create/update/publish, and settings. `PATCH /user/edit-profile` currently passes its request body to service-level validation rather than the shared Zod parser. PostgreSQL access uses `pg`; migrations live under `src/core/database/migrations` and are applied with `bun run migrate`.
+Zod request-body validation is used on auth, onboarding, blog writes, comments, and settings. Profile edits also have service-level validation. Swagger is mounted at `/docs`, but endpoint annotations are incomplete. `/health` and `/api/health` check PostgreSQL and Redis; `/metrics` and `/api/metrics` expose Prometheus metrics.
 
-### Shared package (`packages/shared`)
+### Realtime club chat
 
-Exports request/response DTOs, settings constants, and shared domain types. It provides compile-time contracts, not runtime validation or a generated API client.
+Socket.IO shares the API HTTP server and uses the `/club-chat` namespace. Handshake authentication accepts the access cookie or a Bearer token; joining a room goes through club membership checks. Persisted text messages are broadcast to room members, and presence/typing events are realtime. Chat history and multipart image sends use REST; REST image sends also broadcast the persisted message. Realtime functionality is specific to club chat; regular notification lists are HTTP-backed.
 
-### Worker (`apps/server/src/worker.ts`)
+### Background worker (`apps/server/src/worker.ts`)
 
-Runs three BullMQ workers in a separate process:
+The worker process runs three BullMQ workers:
 
-- `email`: sends OTP messages through Resend (concurrency 10).
-- `blog-publish`: publishes due scheduled drafts.
-- `notification-fanout`: inserts post notifications for followers in batches (concurrency 3).
+- `email`: OTP messages, opted-in follower email, and weekly reading digests (Mondays at 09:00 UTC).
+- `blog-publish`: publishes due scheduled drafts and initiates notification fan-out.
+- `notification-fanout`: inserts post notifications for followers in batches.
 
-The worker closes its workers and Redis connection on SIGTERM/SIGINT.
+Email and scheduled jobs use retries/backoff. Notification event keys and digest job IDs support idempotency. The worker reports job telemetry and closes its workers and Redis connection on SIGTERM/SIGINT.
 
-## 3. Key request flows
+### Shared package and AI service
+
+`packages/shared` exports compile-time DTOs and constants for auth, users, settings, blogs, comments, clubs/chat, and notifications. It is not a runtime validator or generated API client.
+
+`services/ai` is a separate Python FastAPI app that currently exposes only `/health`. It is not called by the TypeScript API and does not train or serve models. The blog API stores authenticated reading-session progress for future analysis; it is not currently consumed by a recommendation service.
+
+## 3. Key request and data flows
 
 ### Authentication
 
-The client creates an account, requests an OTP, and verifies it. The API stores an OTP hash, enqueues email delivery, consumes the OTP, generates a handle if needed, and issues access/refresh JWT cookies. The access cookie is sent to API routes; the path-scoped refresh cookie is used for session restore, refresh, and logout. On an authenticated request's 401, the client attempts one single-flight refresh and retries.
+Signup creates the account; OTP request queues email; verification consumes an active OTP, generates a handle if needed, and issues access/refresh JWT cookies. The refresh cookie is path-scoped to `/api/auth`; the client can restore its session with `/auth/session`. Refresh tokens are stored as hashes and rotated. Logout can revoke the current device or all sessions.
 
-**Critical development limitation:** OTP generation and verification currently use the fixed value `0000`; this is not production-ready.
+> **Critical development limitation:** OTP issuance and verification currently use the fixed value `0000`. Do not expose this authentication behavior in production.
 
-### Publishing and notifications
+### Writing, publication, and reading
 
-New posts are drafts. Immediate publishing changes the post state and enqueues follower fan-out. Scheduling stores `scheduled_publish_at` and enqueues a delayed job; the worker checks and publishes the due draft, then enqueues fan-out. Notification event keys are unique in PostgreSQL to make retries idempotent.
+New posts are drafts. Authors can edit and publish immediately or schedule a future publication (the queue delay ceiling limits scheduling to 24 days). The worker verifies a due draft before publishing and enqueues follower notification fan-out. PostgreSQL stores posts, topic genres, bookmarks, and reading-session progress.
 
-### User settings and account lifecycle
+The For You API applies saved genres to tagged posts while retaining untagged legacy posts as fallback; results are chronological, not recommendation-ranked. The Following feed is based on the follow graph. Server-side search filters published posts by case-insensitive substring match in title, description, and content. Topic chips additionally filter only feed pages already loaded in the client.
 
-`GET/PUT /api/user/settings` reads/writes one complete snapshot; the settings row and `users.fav_genre` are stored in PostgreSQL. These preferences are persisted, but the client has not yet wired most of them into feed selection, reader styling, or notification delivery. `DELETE /api/user/account` removes the account in a transaction and relies on foreign-key cascades for related content, sessions, follows, bookmarks, and notifications.
+The authenticated reader periodically sends active seconds and maximum scroll depth for a visit. The server stores maximum reported values to avoid double-counting retried progress and marks a session complete at 90% scroll depth. This completion value is a proxy, not proof of reading.
+
+### Comments and clubs
+
+Comments belong to published posts. Replies are constrained to the same post and displayed as two-level threads; replying to a reply attaches to its top-level ancestor. Owner deletions are soft deletions so replies remain visible. Reaction rows are unique per comment, user, and reaction type.
+
+Club routes enforce authentication and service-level membership/role checks. They support club membership and governance, invitation/application flows, post submissions and review, group/direct conversations, and collaborator access to club drafts. Collaborative draft saves use versions to detect conflicts; this is not live simultaneous editing. Chat messages persist via the club service, with Socket.IO room broadcasts for live messages and presence.
+
+### Notifications and preferences
+
+In-app notification records cover follows, new posts, scheduled publications, comment replies, and club invitations/reviews. New-post events fan out through BullMQ; unique event keys make inserts retry-safe. The client loads the notification list and polls unread count over HTTP.
+
+Settings are stored as a snapshot in PostgreSQL. Saved genres influence the For You feed; default feed tab and reader appearance are applied by the client. In-app notification preferences gate supported event types; email preferences gate follower emails and the weekly digest. Product-news email remains unavailable until a newsletter source exists.
+
+### Account deletion and avatars
+
+Account deletion removes the user in a transaction and relies on foreign-key cascades for dependent account data. Avatars are validated as JPEG, PNG, or WebP (up to 5 MB), stored on local disk, and served from `/uploads`. Compose mounts a volume for uploads, but this is not external/object storage.
 
 ## 4. Data and infrastructure
 
-The checked-in migrations create:
+Migrations `001`–`017` create and extend user/auth tables, profiles/settings, blogs and scheduling, follows/bookmarks, notifications, comments/reactions, clubs/chat/collaborators, reading sessions, and post genres/notification event keys. The migration runner records applied SQL filenames. PostgreSQL's Docker entrypoint runs mounted SQL only for a newly initialized data directory; use `bun run migrate` for an existing database. The API does not automatically run migrations at startup.
 
-- `users`, onboarding/profile fields, and saved `user_settings`
-- `login_otps` and hashed `refresh_tokens`
-- `blogs` with draft/published state and scheduled-publish time
-- `blog_bookmarks` and `user_follows`
-- `notifications` with unique event keys and unread indexes
+Redis is the BullMQ backend, not an API response cache. Compose publishes the client, PostgreSQL, Prometheus, and Grafana ports; API, worker, Redis, and AI service are on the internal network. The AI service is additionally bound to localhost on the host. Compose includes Prometheus/Grafana and persistent volumes but does not configure TLS, production secrets, backups, or external media storage.
 
-Redis is used for BullMQ queues; it is not an API response cache. Avatars are written to local disk and served at `/uploads`; Compose shares the server's upload volume, but local filesystem storage is not a scalable or externally durable media solution.
+## 5. Known limitations
 
-The migration runner tracks applied SQL filenames in a `migrations` table. PostgreSQL's Docker entrypoint applies SQL files only on first initialization of an empty data directory; use the runner for an existing database. The application does not automatically invoke the migration runner at API startup.
-
-## 5. Known gaps
-
-- Fixed OTP `0000` blocks production readiness.
-- Saved preference switches are persisted but are not generally applied to feed selection, reading appearance, or notification/email delivery.
-- No comments, replies, likes, tags, server-side search, recommendation engine, analytics, or public anonymous read API.
-- Swagger UI is mounted, but endpoint annotations are incomplete.
-- Compose does not provide production TLS, secret management, backups, external media storage, or monitoring.
+- The fixed OTP `0000` is a production blocker.
+- Avatar storage is local disk; uploads, database, and Redis require an operator-managed persistence and backup plan.
+- There is no post-like action, ranked full-text/semantic search, recommender, analytics pipeline, moderation/reporting system, or product-news subscriber source.
+- Feed topic chips apply only to loaded pages; general notifications do not use a realtime transport.
+- The Python AI app is health-only and not integrated with the API.
+- Swagger route annotations are incomplete; `/status` is not a server health endpoint.
+- Compose is a development/self-hosting baseline, not a production security or operations configuration.
