@@ -1,6 +1,23 @@
-.venv/
+# Python cache directories (compiled bytecode cache)
 __pycache__/
+
+# Compiled Python files
 *.py[cod]
+
+# Pytest cache (stores test execution results and metadata)
 .pytest_cache/
+
+# Python virtual environment (installed packages and dependencies)
+.venv/
+
+# Model-related files and directories
 .models/
+
+# Python package build metadata (generated during installation/build)
 *.egg-info/
+
+# Artifacts (generated model files, outputs, and other build artifacts)
+src/artifacts/
+
+# Environment variables (contains secrets, API keys, and configuration)
+.env

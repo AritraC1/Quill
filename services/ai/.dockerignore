@@ -5,3 +5,6 @@ __pycache__
 .models
 tests
 README.md
+
+# Artifacts (models)
+src/artifacts
