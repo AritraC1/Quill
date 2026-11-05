@@ -475,7 +475,7 @@ class BlogRepository {
     };
   }
 
-  // Get published blogs from users the viewer follows
+  // Get published blogs from users the viewer follows + the viewer's own blogs
   async listFollowingFeed(
     viewerId: string,
     page: number,
@@ -493,8 +493,11 @@ class BlogRepository {
             FROM blogs b
             JOIN users u ON u.id = b.user_id
             WHERE b.status = 'published'
-              AND b.user_id IN (
-                  SELECT following_id FROM user_follows WHERE follower_id = $1
+              AND (
+                  b.user_id = $1
+                  OR b.user_id IN (
+                      SELECT following_id FROM user_follows WHERE follower_id = $1
+                  )
               )
             ORDER BY b.published_at DESC
             LIMIT $2 OFFSET $3;
