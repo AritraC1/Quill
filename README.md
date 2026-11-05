@@ -77,6 +77,7 @@ Ideas for future product development; these are not currently implemented:
 - [ ] AI writing assistant
 - [ ] AI analytics dashboard and report generation
 - [ ] Add skeleton while loading
+- [ ] Blog Summariser using NLP
 
 ## Getting started
 
