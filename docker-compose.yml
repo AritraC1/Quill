@@ -52,6 +52,7 @@ services:
       CLIENT_URL: ${CLIENT_URL:-http://localhost}
       RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
       EMAIL_FROM: ${EMAIL_FROM:-Quill <beth.t@example.com>}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://ai-service:8000}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-1.0}
     networks:
@@ -82,6 +83,7 @@ services:
       CLIENT_URL: ${CLIENT_URL:-http://localhost}
       RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
       EMAIL_FROM: ${EMAIL_FROM:-Quill <beth.t@example.com>}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://ai-service:8000}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-1.0}
     networks:

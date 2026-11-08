@@ -11,6 +11,7 @@ import BlogRepository from "./blog.repository";
 import ClubRepository from "../club/club.repository";
 import UserRepository from "../user/user.repository";
 import NotificationService from "../notification/notification.service";
+import { RecommenderClient, recommenderClient } from "./recommender.client";
 import type { BlogWithAuthorModel } from "./blog.model";
 import { blogPublishQueue } from "../../jobs/queue";
 import {
@@ -78,12 +79,14 @@ class BlogService {
   private clubRepo: ClubRepository;
   private userRepo: UserRepository;
   private notificationService: NotificationService;
+  private recommenderClient: RecommenderClient;
 
-  constructor() {
+  constructor(injectedRecommender?: RecommenderClient) {
     this.blogRepo = new BlogRepository();
     this.clubRepo = new ClubRepository();
     this.userRepo = new UserRepository();
     this.notificationService = new NotificationService();
+    this.recommenderClient = injectedRecommender ?? recommenderClient;
   }
 
   // Deterministic BullMQ job id per blog, so rescheduling replaces the
@@ -314,6 +317,39 @@ class BlogService {
     }
 
     const searchQuery = query.search?.trim();
+
+    // Personalized "For You" feed powered by AI recommender model
+    if (!authorId && !searchQuery && userId) {
+      try {
+        const recommendedIds = await this.recommenderClient.getRecommendations(
+          userId,
+          100,
+        );
+
+        if (recommendedIds && recommendedIds.length > 0) {
+          const offset = (page - 1) * limit;
+          const pageIds = recommendedIds.slice(offset, offset + limit);
+
+          if (pageIds.length > 0) {
+            const recommendedBlogs =
+              await this.blogRepo.listPublishedBlogsByIds(userId, pageIds);
+
+            if (recommendedBlogs.length > 0) {
+              return {
+                items: recommendedBlogs.map(toBlogResponse),
+                total: recommendedIds.length,
+              };
+            }
+          }
+        }
+      } catch (error) {
+        logger.warn(
+          { error, userId },
+          "Recommender feed retrieval failed, falling back to database feed",
+        );
+      }
+    }
+
     const preferredGenres =
       !query.author && !searchQuery
         ? (await this.userRepo.getSettings(userId))?.fav_genre ?? []

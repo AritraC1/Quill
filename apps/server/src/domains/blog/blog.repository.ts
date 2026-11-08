@@ -370,6 +370,32 @@ class BlogRepository {
     };
   }
 
+  // Fetch specific published blogs in the specified order (for recommender feed)
+  async listPublishedBlogsByIds(
+    viewerId: string,
+    blogIds: string[],
+  ): Promise<BlogWithAuthorModel[]> {
+    if (blogIds.length === 0) {
+      return [];
+    }
+
+    const query = `
+      SELECT b.*, b.blog_description AS description, u.name AS author_name, u.handle AS author_handle,
+             u.avatar AS author_avatar,
+             EXISTS (
+                 SELECT 1 FROM blog_bookmarks bk
+                 WHERE bk.blog_id = b.id AND bk.user_id = $1
+             ) AS bookmarked
+      FROM blogs b
+      JOIN users u ON u.id = b.user_id
+      WHERE b.status = 'published' AND b.id = ANY($2::uuid[])
+      ORDER BY array_position($2::uuid[], b.id);
+    `;
+
+    const result = await pool.query<BlogWithAuthorModel>(query, [viewerId, blogIds]);
+    return result.rows;
+  }
+
   // Get Count of Blogs (published / drafts / total)
   async countUserBlogs(userId: string): Promise<{
     published: number;

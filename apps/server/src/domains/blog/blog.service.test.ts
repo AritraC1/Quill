@@ -184,4 +184,59 @@ describe("BlogService — saved topic feed", () => {
       [],
     );
   });
+
+  it("serves personalized recommendations in the For You feed when available", async () => {
+    const recommendedRow1 = blogRow({ id: "blog-rec-1", title: "Recommended 1" });
+    const recommendedRow2 = blogRow({ id: "blog-rec-2", title: "Recommended 2" });
+    const listPublishedBlogsByIds = mock(async () => [recommendedRow1, recommendedRow2]);
+    const mockRecommenderClient = {
+      getRecommendations: mock(async () => ["blog-rec-1", "blog-rec-2"]),
+    };
+
+    // @ts-ignore
+    const service = new BlogService(mockRecommenderClient);
+    // @ts-ignore
+    service.userRepo = {
+      getSettings: mock(async () => settingsRow([])),
+    };
+    // @ts-ignore
+    service.blogRepo = {
+      listPublishedBlogsByIds,
+      listPublishedBlogs: mock(async () => ({ items: [], total: 0 })),
+    };
+
+    const result = await service.listFeed("reader-1", { page: 1, limit: 10 });
+
+    expect(mockRecommenderClient.getRecommendations).toHaveBeenCalledWith("reader-1", 100);
+    expect(listPublishedBlogsByIds).toHaveBeenCalledWith("reader-1", ["blog-rec-1", "blog-rec-2"]);
+    expect(result.items.map((b) => b.id)).toEqual(["blog-rec-1", "blog-rec-2"]);
+    expect(result.total).toBe(2);
+  });
+
+  it("gracefully falls back to standard feed if recommender service fails", async () => {
+    const fallbackRow = blogRow({ id: "blog-fallback", title: "Fallback Blog" });
+    const listPublishedBlogs = mock(async () => ({ items: [fallbackRow], total: 1 }));
+    const mockRecommenderClient = {
+      getRecommendations: mock(async () => {
+        throw new Error("AI service down");
+      }),
+    };
+
+    // @ts-ignore
+    const service = new BlogService(mockRecommenderClient);
+    // @ts-ignore
+    service.userRepo = {
+      getSettings: mock(async () => settingsRow([])),
+    };
+    // @ts-ignore
+    service.blogRepo = {
+      listPublishedBlogsByIds: mock(async () => []),
+      listPublishedBlogs,
+    };
+
+    const result = await service.listFeed("reader-1", { page: 1, limit: 10 });
+
+    expect(listPublishedBlogs).toHaveBeenCalled();
+    expect(result.items.map((b) => b.id)).toEqual(["blog-fallback"]);
+  });
 });

@@ -49,7 +49,12 @@ def interest_score(df: pd.DataFrame, now: pd.Timestamp, half_life_days: float = 
     
     time_part = df.active_seconds.clip(upper=600) / 600
     
-    bounced = df.has_session & (df.active_seconds < 15) & (df.max_scroll < 20)
+    has_session = (
+        df["has_session"]
+        if "has_session" in df.columns
+        else ((df["active_seconds"] > 0) | (df["max_scroll"] > 0))
+    )
+    bounced = has_session & (df.active_seconds < 15) & (df.max_scroll < 20)
 
     raw = (2.0 * read + 1.0 * time_part + 3.0 * df.completed
            + 4.0 * df.bookmarked + 2.0 * (df.n_comments > 0)

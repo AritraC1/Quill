@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import { z } from "zod";
 import { type StringValue } from "ms";
 
@@ -33,6 +36,9 @@ const envSchema = z.object({
   // Email service configuration (Resend)
   RESEND_API_KEY: z.string().startsWith("re_"),
   EMAIL_FROM: z.string().min(3).default("Quill <beth.t@example.com>"),
+
+  // AI Recommender Service configuration
+  AI_SERVICE_URL: z.string().url().default("http://localhost:8000"),
 
   // Observability & Sentry
   SENTRY_DSN: z.string().url().optional().or(z.literal("")),
