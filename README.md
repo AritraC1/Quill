@@ -34,7 +34,7 @@ quill/
 ├── packages/
 │   └── shared/       Shared TypeScript DTOs               [README](packages/shared/README.md)
 ├── services/
-│   └── ai/           Standalone FastAPI health service     [README](services/ai/README.md)
+│   └── ai/           Standalone FastAPI + recommender workspace [README](services/ai/README.md)
 ├── scripts/          Local helper scripts                 [README](scripts/README.md)
 ├── docs/             Product, API, and system docs         [index](docs/README.md)
 ├── docker-compose.yml
@@ -51,10 +51,8 @@ quill/
 - Writer clubs with memberships, invitations and applications, post submission/review, group and direct chat, live club-chat events, image messages, and version-checked shared drafts. Shared drafts are not a simultaneous live editor.
 - In-app alerts for follows, followed writers' posts, scheduled publications, comment replies, and club events; opted-in follower emails and a weekly reading digest are delivered by the worker.
 - Saved feed-tab, topic, reader text-size/theme, and notification preferences are applied. Product-news email remains unavailable until a newsletter source exists.
-- Authenticated reading sessions record active time and maximum scroll depth as signals for future recommendation work; no recommender currently consumes them.
+- Authenticated reading sessions record active time and maximum scroll depth as signals for future recommendation work; the data is collected for the standalone AI/recommender work but is not yet consumed by the application feed.
 - Self-service account deletion with dependent data removed through database cascades.
-
-Story search runs server-side over published posts using case-insensitive substring matching across title, description, and content. It is not ranked PostgreSQL full-text or semantic search. Topic chips filter currently loaded feed pages; saved genres are also applied by the For You API. The separate Python AI service currently exposes only `/health` and is not connected to the TypeScript API. See the [PRD](docs/PRD.md) and [API reference](docs/API.md) for precise behavior and limitations.
 
 ## Future work
 
@@ -104,7 +102,7 @@ docker compose up --build
 | `client` | `http://localhost:80` | Nginx SPA and reverse proxy |
 | `server` | Internal port 3000 | Express API, Swagger UI and uploaded assets |
 | `worker` | Internal only | OTP/follower/digest email, scheduled publishing, notification fan-out |
-| `ai-service` | `http://127.0.0.1:8000` | Python FastAPI health endpoint; no model inference or API integration yet |
+| `ai-service` | `http://127.0.0.1:8000` | FastAPI app with a health endpoint and a recommender/data-science workspace under `services/ai/src/recommender`; model APIs are not yet wired into the main app |
 | `postgres` | `localhost:5432` | Persistent application data |
 | `redis` | Internal only | BullMQ queue backend |
 | `prometheus` | `http://localhost:9090` | Scrapes API metrics |
@@ -129,6 +127,7 @@ bun run test:client
 `bun run dev` starts workspaces with a `dev` script (client and API); it does not start the worker. `./scripts/run.sh` starts PostgreSQL, Redis, Prometheus, and Grafana with Compose, then runs the API, worker, and client locally; it does not run migrations.
 
 **To Run this Project:**
+
 ***Option 1:*** In separate terminals, run `bun run dev` for the client and API and `bun run dev:worker` for background jobs. The client is served by Vite (default `http://localhost:5173`) and the API by Express (`http://localhost:3000`). The worker is required for OTP and follower email, weekly digests, scheduled publishing, and notification fan-out. If you use Docker Compose, PostgreSQL applies the migration SQL files when it initializes a new data volume; existing volumes do not automatically rerun those init scripts.
 
 ***Option 2:*** In same terminal run via this script - `./scripts/run.sh`. This will start everything.
