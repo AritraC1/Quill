@@ -15,6 +15,8 @@ dependencies = [
     "sqlalchemy>=2.1.8",
     "psycopg[binary]>=3.3.8",
     "numpy>=2.4.6",
+    "lightgbm>=4.5,<5",
+    "pyarrow>=20,<27",
 ]
 
 [project.optional-dependencies]

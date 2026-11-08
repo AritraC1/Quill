@@ -25,12 +25,18 @@ def build_interactions(sessions, bookmarks, comments) -> pd.DataFrame:
          .reset_index())
 
     df = s.merge(b, on=KEYS, how="outer").merge(c, on=KEYS, how="outer")
-    df["has_session"] = df.session_at.notna() 
+    df["has_session"] = df.last_at.notna() 
     df["active_seconds"] = df.active_seconds.fillna(0)
     df["max_scroll"] = df.max_scroll.fillna(0)
     df["completed"] = df.completed.fillna(False).astype(bool)
     df["n_comments"] = df.n_comments.fillna(0)
     df["bookmarked"] = df.bookmarked_at.notna()
+    
+    # Ensure timestamp columns are datetime
+    for col in ["last_at", "bookmarked_at", "commented_at"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+    
     df["last_at"] = df[["last_at", "bookmarked_at", "commented_at"]].max(axis=1)
     
     return df
