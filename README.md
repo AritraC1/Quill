@@ -14,15 +14,17 @@ Quill is a self-hostable writing and reading platform with passwordless sign-in,
 
 | Layer | Choice |
 |---|---|
-| Client | React 19, TypeScript, React Router 7, Tailwind CSS 4, Vite |
-| API | Express 5 + TypeScript on Bun |
-| Database | PostgreSQL 16 (`pg`) |
-| Background jobs | Redis 7 + BullMQ |
-| Email | Resend |
-| Validation / logging | Zod, Pino |
-| Observability | Prometheus, Grafana, Sentry |
-| Package manager | Bun workspaces |
-| Containers | Docker Compose, Nginx |
+| Client app | React 19 + TypeScript, Vite, React Router 7, Tailwind CSS 4 |
+| Server API | Bun + Express 5 + TypeScript, Socket.IO, Swagger UI |
+| Worker / queue | Redis 7 + BullMQ |
+| Database | PostgreSQL 16 + `pg` |
+| Auth / security | JWT via `jose`, OTP email auth, cookie-based sessions |
+| Validation / logging | Zod, Pino, structured HTTP logging |
+| Email / notifications | Resend + background workers |
+| Observability | Prometheus, Grafana, Sentry, `/health` + `/metrics` endpoints |
+| AI / recommender | Python 3.11 + FastAPI, Pandas, SQLAlchemy, LightGBM |
+| Package manager / monorepo | Bun workspaces |
+| Deployment / local stack | Docker Compose, Nginx |
 
 ## Repository
 
