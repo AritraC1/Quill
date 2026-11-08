@@ -96,7 +96,7 @@ bun run migrate
 ```bash
 cp .env.example .env
 # Set JWT_SECRET (32+ characters) and RESEND_API_KEY before starting.
-docker compose up --build
+docker compose up --build -d
 ```
 
 | Service | Host access | Purpose |
