@@ -493,7 +493,7 @@ export const WritePage = () => {
         .split("\n")
         .map((line) => /^(#{1,3})\s+(.+)$/.exec(line))
         .filter((m): m is RegExpExecArray => m !== null)
-        .map((m) => ({ level: m[1].length, text: m[2].trim() })),
+        .map((m) => ({ level: (m[1] ?? "").length, text: (m[2] ?? "").trim() })),
     [content],
   );
 

@@ -702,7 +702,7 @@ const SettingsPage = () => {
               </div>
               {(["In the app", "By email"] as const).map((title, i) => (
                 <Card key={title} title={title}>
-                  {notificationRows[i].map((r) => (
+                  {notificationRows[i]?.map((r) => (
                     <Row
                       key={r.key}
                       title={r.title}

@@ -17,8 +17,11 @@ This documentation describes the checked-in implementation and distinguishes wor
 apps/client/       React SPA and feature-oriented UI
 apps/server/       Express API, PostgreSQL domains, and BullMQ workers
 packages/shared/   TypeScript DTOs shared by client and server
+services/ai/       FastAPI + Python recommender service ranking the For You feed
 scripts/           Local helper scripts
 docker-compose.yml Local Compose topology
 ```
 
 Start with the root [README](../README.md) for setup instructions. Compose applies migration SQL through PostgreSQL's init mechanism only when initializing a new data volume; use `bun run migrate` for an existing database. Read the API reference and current implementation docs together: not every feature is available without authentication, and the OTP flow still uses a fixed development code.
+
+---

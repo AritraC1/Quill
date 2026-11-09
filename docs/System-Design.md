@@ -1,6 +1,6 @@
 # Quill — System Design
 
-This document records the current data paths, runtime boundaries, and known operational limits as of 2026-11-03. No capacity, throughput, or service-level target has been load-tested. See [Architecture](./Architecture.md) for component details and [API](./API.md) for endpoint contracts.
+This document records the current data paths, runtime boundaries, and known operational limits as of 2026-11-09. No capacity, throughput, or service-level target has been load-tested. See [Architecture](./Architecture.md) for component details and [API](./API.md) for endpoint contracts.
 
 ## 1. Runtime topology
 
@@ -15,9 +15,8 @@ The Docker Compose stack defines:
 | `redis` | BullMQ queue backend | Internal only |
 | `prometheus` | Scrapes API metrics | Port 9090 |
 | `grafana` | Provisioned Prometheus datasource and dashboard | Port 3001 |
-| `ai-service` | Separate Python FastAPI health-only service | Bound to `127.0.0.1`, port 8000 by default |
+| `ai-service` | Python FastAPI recommender ranking the For You feed | Bound to `127.0.0.1`, port 8000 by default |
 
-PostgreSQL and Redis have Compose health checks. The API and worker wait for those dependencies to be healthy. The AI service is not called by the TypeScript API. Compose is a local/self-hosting topology, not a production deployment: it does not configure TLS, managed secrets, automated backup and restore, external object storage, or alerting.
 
 For local development, `./scripts/run.sh` starts PostgreSQL, Redis, Prometheus, and Grafana in Compose, then runs the API, worker, and client locally. It does not apply migrations. `bun run dev` starts workspaces with a `dev` script (client and API), but not the worker.
 
@@ -37,11 +36,11 @@ Cookies are httpOnly and `SameSite=Lax`; `Secure` is enabled in production. CORS
 
 ### Posts, feeds, search, and reading
 
-PostgreSQL stores user drafts, published posts, scheduled publication time, topic genres, bookmarks, and follows. The paginated For You feed applies saved genres to tagged posts while retaining untagged legacy posts as fallback; its ordering is chronological, not personalized ranking. The Following feed is limited to followed authors.
+PostgreSQL stores user drafts, published posts, scheduled publication time, topic genres, bookmarks, follows, clubs, and reading sessions. The authenticated For You feed is ranked by the recommender service when available; the fallback feed applies saved genres to tagged posts while retaining untagged legacy posts, and it is chronological rather than personalized. The Following feed is limited to followed authors.
 
 The API's `search` query filters published posts with case-insensitive substring matches over title, description, and content. This is not ranked PostgreSQL full-text or semantic search. Topic chips are an additional client-side filter over already-loaded feed pages.
 
-Authenticated readers report reading-session progress for published posts. Each visit has a session ID and stores the maximum active seconds and scroll depth received; retries cannot inflate those values. A session is marked complete at 90% reported scroll depth. This is an imperfect engagement proxy, not proof that a story was read. The data is not currently consumed by a recommendation or analytics service.
+Authenticated readers report reading-session progress for published posts. Each visit has a session ID and stores the maximum active seconds and scroll depth received; retries cannot inflate those values. A session is marked complete at 90% reported scroll depth. This is an imperfect engagement proxy, not proof that a story was read. The recommender service consumes it as implicit feedback for feed ranking, and there is no analytics service.
 
 ### Comments and clubs
 
@@ -103,3 +102,5 @@ There are no measured capacity figures or configured scale triggers. Before prod
 5. Select external object storage and a deployment topology from measured requirements.
 
 The current deployment does not configure multiple API replicas, a shared Socket.IO adapter, read replicas, a CDN, or recommendation precomputation. Evaluate such changes only when requirements and measurements justify them.
+
+---

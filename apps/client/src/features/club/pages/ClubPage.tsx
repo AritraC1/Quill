@@ -92,7 +92,7 @@ const PersonAvatar = ({ name, avatar }: { name: string; avatar?: string | null }
 // The schema has no brand color — derive a stable one per club id
 const CLUB_COLORS = ["#1F3D2F", "#B27D56", "#5C6B4F", "#7A4E3A", "#3B5248"];
 const clubColor = (id: string) =>
-  CLUB_COLORS[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % CLUB_COLORS.length];
+  CLUB_COLORS[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % CLUB_COLORS.length] ?? "#1F3D2F";
 
 const fromClubDTO = (club: ClubDTO): Club => ({
   id: club.id,

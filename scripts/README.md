@@ -27,3 +27,5 @@ To run only the AI service:
 ```
 
 The AI API is available locally at `http://127.0.0.1:8000`; its container is also reachable from other Compose services at `http://ai-service:8000`. This script does not start or connect the AI service to the TypeScript API.
+
+---

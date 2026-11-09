@@ -15,6 +15,7 @@ The backend is an Express 5 + TypeScript API running on Bun, with PostgreSQL for
 | Logging | Pino + pino-http |
 | Email | Resend |
 | Realtime | Socket.IO namespace `/club-chat` for club chat events and presence |
+| Recommender client | `domains/blog/recommender.client.ts` calls the FastAPI service in `services/ai` (2 s timeout) to rank the For You feed; any failure falls back to the database feed |
 | Observability | Prometheus metrics, health checks, and optional Sentry |
 | API UI | Swagger UI at `/docs` (endpoint annotations are incomplete) |
 
@@ -33,6 +34,8 @@ Run the API worker separately:
 ```bash
 bun run dev:worker
 ```
+
+Set `AI_SERVICE_URL` to point the recommender client at the FastAPI service (Compose defaults it to `http://ai-service:8000`; locally the default is `http://localhost:8000`).
 
 The API listens on port 3000 by default. Local PostgreSQL and Redis must be available, or start them with `docker compose up postgres redis`.
 
@@ -81,7 +84,7 @@ All API routes are under `/api`; authenticated endpoints use the access cookie o
 |---|---|
 | Auth | `/auth/sign-up`, `/auth/request-otp`, `/auth/verify-otp`, `/auth/session`, `/auth/refresh-token`, `/auth/logout`, `/auth/onboard` |
 | User | `/user/me`, `/user/edit-profile`, `/user/avatar`, `/user/:handle`, follows/followers/suggestions, `/user/settings`, `/user/account` |
-| Blog | `/blogs` feed/search/author, `/blogs/following`, drafts, published posts, bookmarks, publish/schedule, reading progress |
+| Blog | `/blogs` feed/search/author, `/blogs/following`, drafts, published posts, bookmarks, publish/schedule, `/blogs/:id/reading-session` |
 | Comments | `/blogs/:blogId/comments`, `/comments/:commentId` and reactions |
 | Clubs | `/clubs` membership, applications, invitations, submissions/reviews, conversations/messages, shared drafts |
 | Notifications | `/notifications`, unread count, read/read-all, clear |
@@ -101,8 +104,10 @@ SQL migrations `001`–`017` are under `src/core/database/migrations/`, covering
 - Access and refresh cookies are httpOnly, `SameSite=Lax`, and `Secure` in production.
 - JSON request bodies are capped at 1 MB; avatar uploads allow JPEG/PNG/WebP up to 5 MB.
 - Avatars are stored on local disk (`uploads/`), not object storage.
-- Saved genres filter tagged posts in the For You feed (untagged posts remain as fallback); saved reader appearance and in-app notification switches are applied.
+- Saved genres filter the fallback For You feed (untagged posts remain as fallback); the authenticated For You feed is ranked by the recommender service when it responds within the 2-second timeout. Saved reader appearance and in-app notification switches are applied.
 - The worker sends opted-in follower emails and a weekly digest on Mondays at 09:00 UTC. Product-news email is disabled until a newsletter source exists.
 - `/status` is a client placeholder; use the API health endpoints. Swagger is mounted, but API annotations are incomplete.
 - Compose includes Prometheus/Grafana, metrics, and optional Sentry integration, but does not configure TLS, managed secrets, backup/restore, or production alerting.
 - Club chat is the realtime Socket.IO feature; regular notification lists are loaded through HTTP and are not a general realtime notification stream.
+
+---

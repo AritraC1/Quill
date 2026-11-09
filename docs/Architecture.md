@@ -1,6 +1,6 @@
 # Quill — Architecture
 
-This document describes the checked-in implementation as of 2026-11-03. For request and response contracts, see [API.md](./API.md); for product scope and limitations, see [PRD.md](./PRD.md).
+This document describes the checked-in implementation as of 2026-11-09. For request and response contracts, see [API.md](./API.md); for product scope and limitations, see [PRD.md](./PRD.md).
 
 ## 1. System overview
 
@@ -20,7 +20,7 @@ Browser
                       └── Socket.IO — authenticated club chat and presence
 
 BullMQ worker (separate process) ── Redis queues ── PostgreSQL / Resend
-Python FastAPI service ── /health only; not called by the TypeScript API
+Python FastAPI service ── /health + recommendations; ranks the For You feed
 ```
 
 In Docker Compose, Nginx serves the client on port 80 and proxies `/api/`, `/socket.io/`, `/docs/`, `/uploads/`, `/health`, and `/metrics` to the server. Compose also defines PostgreSQL, Redis, Prometheus, Grafana, and the standalone AI service. It is a local/self-hosting starting point, not a hardened production deployment.
@@ -70,7 +70,13 @@ Email and scheduled jobs use retries/backoff. Notification event keys and digest
 
 `packages/shared` exports compile-time DTOs and constants for auth, users, settings, blogs, comments, clubs/chat, and notifications. It is not a runtime validator or generated API client.
 
-`services/ai` is a separate Python FastAPI app that currently exposes only `/health`. It is not called by the TypeScript API and does not train or serve models. The blog API stores authenticated reading-session progress for future analysis; it is not currently consumed by a recommendation service.
+`services/ai` is a separate Python FastAPI app in the Compose topology. Its
+`/recommendations/{userId}` endpoint ranks the authenticated For You feed:
+`apps/server/src/domains/blog/recommender.client.ts` calls it with a 2-second
+timeout, and any failure falls back to the regular database feed. The service
+trains on stored reading-session, bookmark, and comment signals; seeing
+recommendations therefore depends on generated artifacts being available, and
+the feed degrades gracefully without them.
 
 ## 3. Key request and data flows
 
@@ -84,7 +90,13 @@ Signup creates the account; OTP request queues email; verification consumes an a
 
 New posts are drafts. Authors can edit and publish immediately or schedule a future publication (the queue delay ceiling limits scheduling to 24 days). The worker verifies a due draft before publishing and enqueues follower notification fan-out. PostgreSQL stores posts, topic genres, bookmarks, and reading-session progress.
 
-The For You API applies saved genres to tagged posts while retaining untagged legacy posts as fallback; results are chronological, not recommendation-ranked. The Following feed is based on the follow graph. Server-side search filters published posts by case-insensitive substring match in title, description, and content. Topic chips additionally filter only feed pages already loaded in the client.
+The For You API is ranked by the recommender service when it responds within
+its 2-second timeout, and otherwise falls back to a database feed that applies
+saved genres to tagged posts while retaining untagged legacy posts. The
+Following feed is based on the follow graph. Server-side search filters
+published posts by case-insensitive substring match in title, description, and
+content. Topic chips additionally filter only feed pages already loaded in the
+client.
 
 The authenticated reader periodically sends active seconds and maximum scroll depth for a visit. The server stores maximum reported values to avoid double-counting retried progress and marks a session complete at 90% scroll depth. This completion value is a proxy, not proof of reading.
 
@@ -114,8 +126,10 @@ Redis is the BullMQ backend, not an API response cache. Compose publishes the cl
 
 - The fixed OTP `0000` is a production blocker.
 - Avatar storage is local disk; uploads, database, and Redis require an operator-managed persistence and backup plan.
-- There is no post-like action, ranked full-text/semantic search, recommender, analytics pipeline, moderation/reporting system, or product-news subscriber source.
+- There is no post-like action, ranked full-text/semantic search, analytics pipeline, moderation/reporting system, or product-news subscriber source. The recommender is a research baseline: its committed artifacts are trained on synthetic data and there is no impression log, so recommendations are confidence-limited.
 - Feed topic chips apply only to loaded pages; general notifications do not use a realtime transport.
-- The Python AI app is health-only and not integrated with the API.
+- The Python AI service ranks the For You feed behind a fallback; it is not otherwise integrated (no impression log, no online learning, and artifacts are excluded from the Docker image).
 - Swagger route annotations are incomplete; `/status` is not a server health endpoint.
 - Compose is a development/self-hosting baseline, not a production security or operations configuration.
+
+---

@@ -1,12 +1,10 @@
 # Quill — Product Requirements Document
 
-> **Living document — checked against the repository on 2026-11-03.** “Implemented” means behavior exists in the checked-in client/API; it does not imply production readiness. See [Architecture](./Architecture.md), [API](./API.md), and [CHANGE-LOG.md](../CHANGE-LOG.md).
+> **Living document — checked against the repository on 2026-11-09.** “Implemented” means behavior exists in the checked-in client/API; it does not imply production readiness. See [Architecture](./Architecture.md), [API](./API.md), and [CHANGE-LOG.md](../CHANGE-LOG.md).
 
 ## 1. Product summary
 
-Quill is a writing and reading platform for people who want to publish long-form stories and discover work from writers they care about. The current product includes account access, profiles, post creation and reading, feeds, follows, bookmarks, notifications, and a settings surface.
-
-The codebase is an early, self-hostable application rather than a production service. Most user-facing core flows are connected to the API, but authentication still accepts a fixed test OTP, stored preferences are not yet applied to most corresponding client behaviors, and operational safeguards such as HTTPS, backups, and monitoring are not configured.
+Quill is a writing and reading platform for people who want to publish long-form stories and discover work from writers they care about. The current product includes account access, profiles, post creation and reading, feeds, follows, bookmarks, threaded comments, writer clubs, notifications, reader text-to-speech, and a settings surface.
 
 ## 2. Target users
 
@@ -31,17 +29,20 @@ Administrative roles, moderation tooling, and multi-tenancy are not implemented.
 | Identity | Email OTP signup/login, httpOnly cookies, refresh rotation, device/all-session logout, generated handles | Replace fixed OTP `0000`; verify real email flow and production abuse controls |
 | Onboarding | Persists selected genres, optional avatar and bio through API | Client proceeds if persistence fails; align its UX/error handling |
 | Profile | API-backed profile reads/edits, handle policy, disk-backed avatar uploads, visitor profiles | Add durable external/object storage and production upload lifecycle |
-| Posts | Markdown editor, drafts, edit/delete, immediate and scheduled publishing, up to five topic tags per post | Rich publishing capabilities such as analytics |
-| Feeds | Paginated published feed and Following feed; saved genres filter tagged posts in For You and untagged legacy posts remain visible | For You remains chronological within results; server search is substring matching, not ranked full-text search |
-| Follows | Persisted follow graph, follower list, following list, and suggestions | Ranking/selection for suggestions is basic; no moderation or private accounts |
+| Posts | Markdown editor, drafts, edit/delete, immediate and scheduled publishing, up to five topic tags per post, browser text-to-speech narration | Rich publishing capabilities such as analytics |
+| Feeds | Paginated For You and Following feeds; For You is ranked by the Python recommender service (reading sessions, bookmarks, comments; popularity/content/ALS/hybrid/LightGBM) with a graceful database-feed fallback; saved genres filter the fallback and untagged legacy posts remain visible | Artifacts are trained on synthetic data; no durable impression log; server search is substring matching, not ranked full-text search |
+| Comments | Two-level threaded comments with owner edit/delete, soft delete, and like/heart reactions | No richer moderation tooling |
+| Clubs | Writer clubs with memberships, invitations, join applications, post submission/review workflow, group and direct chat with images and live Socket.IO events, version-checked shared drafts | Realtime chat is not horizontally scalable (in-memory presence); no live simultaneous editing |
+| Follows | Persisted follow graph, follower list, following list, and suggestions | Ranking/selection for suggestions is basic; no private accounts |
 | Bookmarks | Persisted per-user reading list | None required for current MVP behavior |
+| Reading signals | Authenticated reading sessions record active time and maximum scroll depth as recommender input | Signals are behavioral proxies; no impression tracking |
 | Notifications | In-app follow, new-post, scheduled-publication, comment-reply, and club events; opted-in follower email and weekly digest | No product-news email source or realtime transport |
 | Settings | Server-backed saved topics, default feed tab, reader text size/theme, and notification switches; applied to feed, reader, and supported delivery channels | Product-news email is disabled until a newsletter source exists |
 | Account lifecycle | Self-service deletion removes user-owned/cascaded data and clears auth cookies | Confirm retention/legal policy before a public launch |
 
 ### Non-goals today
 
-There are no likes, ranked full-text or semantic search, editorial roles, moderation tools, recommendations, public anonymous reading API, or analytics pipeline. The platform does support threaded comments, post topic tags, and basic server-side substring search.
+There are no likes, ranked full-text or semantic search, editorial roles, moderation tools, public anonymous reading API, or analytics pipeline. The platform does support threaded comment reactions, post topic tags, basic server-side substring search, and a ranker-backed For You feed.
 
 ## 5. User stories
 
@@ -54,15 +55,15 @@ There are no likes, ranked full-text or semantic search, editorial roles, modera
 - ✅ Receive and manage in-app new-follower and new-post notifications.
 - ✅ Save topics, feed-tab, and reading-appearance preferences across sessions; saved topics filter tagged posts in For You.
 - ✅ Search published posts server-side by substring across title, description, and content; this is not ranked full-text or semantic search.
-- ⬜ Comment, reply, like, or privately message writers.
+- ✅ Comment, reply, and react to comments; message writers inside clubs.
 
 ### Author
 
 - ✅ Maintain a profile and avatar; change a handle subject to a six-month interval.
 - ✅ Create and edit drafts in the markdown/rich-text/preview editor.
+- ✅ Join writer clubs: submit drafts for review, chat with members, and collaborate on version-checked shared drafts.
 - ✅ Publish immediately or schedule a future publication.
 - ✅ View own drafts and published posts.
-- ⬜ Add analytics or a full media library.
 
 ### Account owner
 
@@ -113,7 +114,9 @@ Potential measures include onboarding completion, first post published, readers 
 ## 9. Open decisions
 
 - Should the product remain OTP-only, and what are the required OTP expiry, resend, and abuse-protection rules?
-- What should “For You” mean beyond the current chronological published feed?
+- How should “For You” ranking evolve as real reading-signal data accumulates beyond the synthetic training artifacts (the feed currently falls back to a chronological, genre-filtered database feed whenever the recommender is unavailable)?
 - Should profile/post reading be available without sign-in?
 - What retention, moderation, and account-deletion policy is required?
 - Which settings should actively affect client behavior and outbound notifications?
+
+---

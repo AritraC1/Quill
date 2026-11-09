@@ -32,8 +32,9 @@ export const MediaAssets = ({
     const byUrl = new Map<string, MediaAsset>();
     uploads.forEach((a) => byUrl.set(a.url, a));
     for (const m of content.matchAll(IMAGE_RE)) {
-      if (!byUrl.has(m[2]))
-        byUrl.set(m[2], { id: m[2], name: m[1] || "image", url: m[2] });
+      const url = m[2];
+      if (url && !byUrl.has(url))
+        byUrl.set(url, { id: url, name: m[1] || "image", url });
     }
     return [...byUrl.values()];
   }, [content, uploads]);

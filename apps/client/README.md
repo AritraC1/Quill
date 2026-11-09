@@ -76,7 +76,7 @@ src/
 
 The API sets `quill_access_token` and `quill_refresh_token` as httpOnly cookies; client JavaScript never reads the token values. Requests include credentials. `useAuth()` restores the session through `/auth/session`; `fetchWithAuth()` performs a single-flight refresh and retries once after a 401. Logout supports this device or all sessions.
 
-The client uses API-backed profiles, posts, bookmarks, follows, follower lists, suggestions, notifications, settings, account deletion, comments, and clubs. Club chat history and sends use REST; Socket.IO delivers live chat/presence events. Club shared drafts use version-checked saves, not simultaneous live editing. The For You API applies saved genres to tagged posts while retaining untagged legacy posts; topic chips filter pages currently loaded in the client. Story search queries the server across published posts using case-insensitive substring matching across title, description, and content (not ranked full-text or semantic search). If a feed request fails, the feed can show local mock stories; profile and blog operations otherwise depend on the API.
+The client uses API-backed profiles, posts, bookmarks, follows, follower lists, suggestions, notifications, settings, account deletion, comments, and clubs. Club chat history and sends use REST; Socket.IO delivers live chat/presence events. Club shared drafts use version-checked saves, not simultaneous live editing. The For You feed is ranked by the server's recommender service when available and falls back to the genre-filtered database feed otherwise; topic chips filter pages currently loaded in the client. Story search queries the server across published posts using case-insensitive substring matching across title, description, and content (not ranked full-text or semantic search). If a feed request fails, the feed can show local mock stories; profile and blog operations otherwise depend on the API.
 
 Saved default tab, reader text size and theme, and in-app notification switches are applied. Published blog pages include threaded comments and comment reactions, a text-to-speech player, and authenticated reading-progress reporting. The worker sends opted-in follower emails and weekly digests (Mondays at 09:00 UTC). Product-news email is disabled until a newsletter source exists. The `/status` route is only a placeholder; API health probes are served by the server.
 
@@ -85,3 +85,5 @@ Saved default tab, reader text size and theme, and in-app notification switches 
 ## Docker
 
 The multi-stage `Dockerfile` has a Vite dev target and a production target that serves the build with Nginx. `nginx.conf` provides SPA fallback and proxies `/api/`, `/socket.io/`, `/docs/`, `/uploads/`, `/health`, and `/metrics` to the server service.
+
+---

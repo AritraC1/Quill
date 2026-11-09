@@ -384,6 +384,7 @@ source; `blog_description` is an optional excerpt.
 | DELETE | `/blogs/:id/schedule` | Cancel a scheduled publish — the blog stays an ordinary draft |
 | POST | `/blogs/:id/bookmark` | Save to the reading list |
 | DELETE | `/blogs/:id/bookmark` | Remove from the reading list |
+| POST | `/blogs/:id/reading-session` | Record a reading session (see below) |
 
 List responses are `{ items: BlogResponseDTO[], total }` and include the author
 (`name`, `handle`, `avatar`) from the users join. `isBookmarked` reflects the
@@ -447,6 +448,16 @@ invalid or stale `publishAt`, or oversized `title`/`content`/`description`;
 Bookmark state lives in `blog_bookmarks` (unique per `(user_id, blog_id)`), so
 saved lists survive across devices.
 
+### Reading sessions
+
+`POST /blogs/:id/reading-session` records implicit reading feedback for the
+recommendation pipeline. The client sends a `{ sessionId, activeSeconds,
+maxScrollPercent, completed }` snapshot per visit; only each metric's maximum
+is stored per session, so retries cannot inflate progress. A session completes
+at 90% scroll. Data lands in `reading_sessions` (migration
+`016_reading_sessions.sql`) and is consumed by the recommender service in
+`services/ai` — it is a behavioral proxy, not proof of reading.
+
 ### Comments (`/blogs/:blogId/comments`, `/comments`) — all authenticated
 
 The CommentSection under a published story. Threads are a two-level tree:
@@ -497,14 +508,63 @@ unpublished blog, replying cross-blog or to a deleted comment, editing a
 deleted comment, reacting to a deleted comment; `403` editing/deleting another
 writer's comment.
 
-## 5. Notifications (`/notifications`) — all authenticated
+## 5. Clubs (`/clubs`) — all authenticated
 
-In-app notifications for the navbar bell. There are exactly two events:
+Writer clubs with memberships, review workflows, chat, and shared drafts.
+Membership and role checks are enforced in the service on every route. Realtime
+club chat runs over the Socket.IO `/club-chat` namespace (handshake auth by
+cookie or Bearer; rooms are membership-checked); conversation history and
+message sending stay on REST (pagination + multipart images), and the socket
+layer only broadcasts what was persisted.
 
-| Event | Recipient | Message rendered by the client |
+| Method | Path | Purpose |
 |---|---|---|
-| A writer publishes a blog | Their followers | "Alex published a new story" |
-| Someone follows a writer | The writer being followed | "Sam started following you" |
+| POST | `/clubs` | Create a club |
+| GET | `/clubs/mine` | The signed-in user's clubs |
+| GET | `/clubs/discover` | Clubs browsable/joinable |
+| GET | `/clubs/invitations` | The viewer's pending invitations |
+| POST | `/clubs/invitations/:invitationId/accept` | Accept an invitation |
+| POST | `/clubs/invitations/:invitationId/decline` | Decline an invitation |
+| GET | `/clubs/:id/landing` | Public club landing content |
+| GET | `/clubs/:id/dashboard` | Member dashboard (stats, queues) |
+| GET | `/clubs/:id` | Club detail |
+| PATCH | `/clubs/:id` | Update club details (admins) |
+| GET | `/clubs/:id/members` | Member list with roles |
+| PATCH | `/clubs/:id/members/:userId` | Change a member's role |
+| DELETE | `/clubs/:id/members/:userId` | Remove a member |
+| GET/POST | `/clubs/:id/applications` | List or create a join application |
+| POST | `/clubs/:id/applications/:applicationId/decision` | Decide an application |
+| POST | `/clubs/:id/invitations` | Invite a user by handle |
+| GET/POST | `/clubs/:id/submissions` | List or submit a draft for review |
+| POST | `/clubs/:id/submissions/:blogId/review` | Record a review decision |
+| GET | `/clubs/:id/submissions/:blogId/reviews` | Review history for a submission |
+| POST | `/clubs/:id/submissions/:blogId/resubmit` | Resubmit after revisions |
+| GET | `/clubs/:id/conversations` | Group + the viewer's direct conversations |
+| POST | `/clubs/:id/conversations/direct` | Start a member 1:1 conversation |
+| GET | `/clubs/:id/conversations/:conversationId` | Conversation detail |
+| GET | `/clubs/:id/conversations/:conversationId/messages` | Paginated message history |
+| POST | `/clubs/:id/conversations/:conversationId/messages` | Send a message — JSON text or multipart `image` field |
+| GET/POST | `/clubs/:id/drafts/:blogId/collaborators` | List or add draft collaborators |
+| DELETE | `/clubs/:id/drafts/:blogId/collaborators/:userId` | Remove a collaborator |
+| PUT | `/clubs/:id/drafts/:blogId` | Save a shared draft with optimistic concurrency (`version`) |
+
+Collaborative drafts are version-checked writes, not a simultaneous live
+editor: a save carrying a stale `version` is rejected and reloaded. Chat image
+messages persist through the same REST send handler and are broadcast to the
+club rooms by the socket layer.
+
+## 6. Notifications (`/notifications`) — all authenticated
+
+In-app notifications for the navbar bell. Event types (all checked against
+user preferences before delivery):
+
+| Type | Recipient | Trigger |
+|---|---|---|
+| `new_post` | An author's followers | A followed writer publishes |
+| `new_follower` | The followed writer | Someone follows them |
+| `scheduled_post_published` | The author | A scheduled blog flips to published |
+| `comment_reply` | The parent-comment author | Someone replies to their comment |
+| club events | Relevant club members | Invitations, membership changes, submissions, and review decisions |
 
 ### `GET /notifications` — authenticated
 
@@ -575,17 +635,20 @@ of the signed-in user.
   is a future upgrade). Notification preferences are checked at the event or
   email-delivery boundary.
 
-## 6. System and documentation routes
+## 7. System and documentation routes
 
 | Path | Method | Description |
 |---|---|---|
 | `/docs` | GET | Swagger UI; route files currently have no endpoint annotations |
-| `/health` | — | Not implemented |
+| `/health`, `/api/health` | GET | Health probe: checks PostgreSQL and Redis with latencies; `200 { status: "ok", … }` or `503 { status: "degraded", … }` |
+| `/metrics`, `/api/metrics` | GET | Prometheus exposition (`quill_http_*`, `quill_db_pool_*`, `quill_worker_*`), scraped by the Compose Prometheus at 10 s intervals |
 
-The API router is mounted at `/api`; `/auth/*`, `/user/*`, `/blogs/*`, and
-`/notifications/*` are mounted.
+The API router is mounted at `/api`; `/auth/*`, `/user/*`, `/blogs/*` (which
+includes the comments endpoints), `/comments/*`, `/clubs/*`, and
+`/notifications/*` are mounted. The server also hosts Socket.IO for club chat
+and serves `/uploads` statically.
 
-## 7. Background jobs
+## 8. Background jobs
 
 The API enqueues `send-otp` jobs on the BullMQ queue named `email`. `apps/server/src/worker.ts` starts a worker with concurrency 10.
 
@@ -597,7 +660,7 @@ The API enqueues `send-otp` jobs on the BullMQ queue named `email`. `apps/server
 
 The email worker sends OTP email through Resend.
 
-## 8. Database tables
+## 9. Database tables
 
 | Table | Columns/role | Migration |
 |---|---|---|
@@ -616,14 +679,17 @@ The email worker sends OTP email through Resend.
 | `user_settings` | Default feed tab, text size, theme, notification switches; genres remain in `users.fav_genre` | `012_user_settings.sql` |
 | `comments` | `blog_id` + `user_id` (cascade), self-referencing `parent_comment_id` (tree), `body`, soft-delete `deleted_at`; blog/parent/reader indexes | `013_create_comments.sql` |
 | `comment_reactions` | `comment_id` + `user_id` + `reaction_type` (`like`/`heart`) unique triple, `created_at`; per-comment count index | `013_create_comments.sql` |
+| `clubs`, `club_members`, `club_invitations`, `club_applications` | Club entities, member roles, invitations, join applications | `014_create_clubs.sql` |
+| `club_conversations`, `club_messages`, collaborator tables | Club chat hall (group + direct conversations, messages, images) and shared-draft contributors | `015_club_chat_hall.sql` |
+| `reading_sessions` | `user_id`, `blog_id`, `session_id`, `active_seconds`, `max_scroll_percent`, `completed`; recommender input | `016_reading_sessions.sql` |
 | `blogs.genres` | Up to five post topic tags; GIN index supports saved-topic filtering | `017_post_genres_and_notification_events.sql` |
 | `notifications.type` | Scheduled-publication and comment-reply event types | `017_post_genres_and_notification_events.sql` |
 
-Migrations are plain, idempotent SQL files in `src/core/database/migrations/`,
-applied in filename order by the runner (`bun run migrate`,
+Migrations are plain, idempotent SQL files in `src/core/database/migrations/`
+(`001`–`017`), applied in filename order by the runner (`bun run migrate`,
 `src/scripts/migrate.ts`), which records each in a `migrations` table.
 
-## 8. Client API mapping
+## 10. Client API mapping
 
 | Client operation | Endpoint |
 |---|---|
@@ -668,11 +734,17 @@ applied in filename order by the runner (`bun run migrate`,
 | `updateCommentApi` | `PATCH /comments/:commentId` |
 | `deleteCommentApi` | `DELETE /comments/:commentId` (soft delete) |
 | `setCommentReactionApi` / `removeCommentReactionApi` | `PUT` / `DELETE /comments/:commentId/reaction` |
+| reading-session tracker | `POST /blogs/:id/reading-session` (progress snapshot per visit) |
+| `features/club/api/club.api.ts` helpers | `/clubs/*` endpoints (clubs, members, applications, submissions, conversations, shared drafts) |
 
 The client write editor (`/write`, `/write/:id`) autosaves as a draft and
 publishes immediately or schedules through the API. Feed and profile pages
 render server blogs; feed requests are paginated (20 per server page). The For
-You and Following feeds are separate endpoints. Story search is server-side
-substring matching; feed topic chips filter the pages currently loaded in the
-client. Saved-topic filtering runs server-side for For You. Reader and supported
-notification preferences are applied.
+You and Following feeds are separate endpoints. The authenticated For You feed
+is ranked by the recommender service when it responds within its 2-second
+timeout, otherwise it falls back to the database feed. Story search is
+server-side substring matching; feed topic chips filter the pages currently
+loaded in the client. Saved-topic filtering runs server-side for the fallback
+feed. Reader and supported notification preferences are applied.
+
+---

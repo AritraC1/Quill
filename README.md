@@ -49,11 +49,12 @@ quill/
 - Onboarding, editable profile and handle, multipart avatar uploads, visitor profiles, follow/follower lists, and follow suggestions.
 - Markdown post drafts, editing, immediate or scheduled publishing, paginated For You and Following feeds, and persistent bookmarks.
 - Topic-tagged posts and a For You feed shaped by saved genres; untagged legacy posts remain available as fallback.
+- Browser text-to-speech narration of posts with voice/language selection and a floating player.
+- Reading sessions record active time and maximum scroll depth; the For You feed is ranked by the Python recommender service when it can serve results, with graceful fallback to a chronological, genre-aware feed if the AI service is unavailable.
 - Threaded comments with replies, owner edit/delete, and like/heart comment reactions.
 - Writer clubs with memberships, invitations and applications, post submission/review, group and direct chat, live club-chat events, image messages, and version-checked shared drafts. Shared drafts are not a simultaneous live editor.
 - In-app alerts for follows, followed writers' posts, scheduled publications, comment replies, and club events; opted-in follower emails and a weekly reading digest are delivered by the worker.
 - Saved feed-tab, topic, reader text-size/theme, and notification preferences are applied. Product-news email remains unavailable until a newsletter source exists.
-- Authenticated reading sessions record active time and maximum scroll depth as signals for future recommendation work; the data is collected for the standalone AI/recommender work but is not yet consumed by the application feed.
 - Self-service account deletion with dependent data removed through database cascades.
 
 ## Future work
@@ -104,7 +105,7 @@ docker compose up --build -d
 | `client` | `http://localhost:80` | Nginx SPA and reverse proxy |
 | `server` | Internal port 3000 | Express API, Swagger UI and uploaded assets |
 | `worker` | Internal only | OTP/follower/digest email, scheduled publishing, notification fan-out |
-| `ai-service` | `http://127.0.0.1:8000` | FastAPI app with a health endpoint and a recommender/data-science workspace under `services/ai/src/recommender`; model APIs are not yet wired into the main app |
+| `ai-service` | `http://127.0.0.1:8000` | FastAPI app with a health endpoint and a recommender workspace under `services/ai/src/recommender`; the server ranks the For You feed via its `/recommendations/{userId}` endpoint with a 2 s timeout and falls back to the database feed on any failure |
 | `postgres` | `localhost:5432` | Persistent application data |
 | `redis` | Internal only | BullMQ queue backend |
 | `prometheus` | `http://localhost:9090` | Scrapes API metrics |

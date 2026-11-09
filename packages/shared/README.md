@@ -29,3 +29,5 @@ These are compile-time API/data contracts, not runtime validators or a generated
 ## Source
 
 Types and shared constants are defined in [`src/index.ts`](./src/index.ts). Bun resolves the package source directly; there is no separate build or publish step.
+
+---
