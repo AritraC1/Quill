@@ -2,6 +2,7 @@
 import pandas as pd
 from recommender.api import get_recommendations, get_manifest
 import recommender.api as api_module
+import recommender.data.load as load_module
 
 
 def test_get_recommendations_from_artifacts(tmp_path, monkeypatch):
@@ -35,6 +36,15 @@ def test_get_recommendations_cold_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(api_module, "RECS_PARQUET_PATH", empty_parquet)
     monkeypatch.setattr(api_module, "_cached_df", None)
     monkeypatch.setattr(api_module, "_cached_mtime", None)
+
+    # Stub out live DB loaders so the fallback path is hermetic: without these,
+    # a reachable database returns real recommendations and this test's
+    # "no data available" premise breaks.
+    empty = pd.DataFrame()
+    monkeypatch.setattr(load_module, "load_blogs", lambda: empty)
+    monkeypatch.setattr(load_module, "load_reading_sessions", lambda: empty)
+    monkeypatch.setattr(load_module, "load_blog_bookmarks", lambda: empty)
+    monkeypatch.setattr(load_module, "load_comments", lambda: empty)
 
     res = get_recommendations(user_id="non_existent_user", limit=5)
     assert res.user_id == "non_existent_user"

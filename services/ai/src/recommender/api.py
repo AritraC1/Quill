@@ -78,7 +78,7 @@ def generate_online_fallback(user_id: str, top_n: int) -> list[dict[str, Any]]:
             top_n=top_n,
         )
         return [
-            {"blog_id": b_id, "rank": i + 1, "engine": "hybrid_online"}
+            {"blog_id": str(b_id), "rank": i + 1, "engine": "hybrid_online"}
             for i, b_id in enumerate(blog_ids)
         ]
     except Exception:
@@ -93,7 +93,7 @@ def generate_online_fallback(user_id: str, top_n: int) -> list[dict[str, Any]]:
                 .index.tolist()
             )
             return [
-                {"blog_id": b_id, "rank": i + 1, "engine": "popularity_fallback"}
+                {"blog_id": str(b_id), "rank": i + 1, "engine": "popularity_fallback"}
                 for i, b_id in enumerate(top_popular)
             ]
         return []
